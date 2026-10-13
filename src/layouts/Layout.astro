@@ -1,23 +1,39 @@
-<!doctype html>
-<html lang="en">
-	<head>
-		<meta charset="utf-8" />
-		<meta name="viewport" content="width=device-width" />
-		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-		<link rel="icon" href="/favicon.ico" />
-		<meta name="generator" content={Astro.generator} />
-		<title>Astro Basics</title>
-	</head>
-	<body>
-		<slot />
-	</body>
-</html>
+---
+import "@/styles/globals.css";
+import NavbarAuth from "@/components/NavbarAuth";
 
-<style>
-	html,
-	body {
-		margin: 0;
-		width: 100%;
-		height: 100%;
-	}
-</style>
+interface Props {
+  title?: string;
+}
+
+const { title = "UOOC QA Share" } = Astro.props;
+---
+
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" href="/favicon.ico" />
+    <meta name="generator" content={Astro.generator} />
+    <title>{title}</title>
+  </head>
+  <body class="min-h-screen bg-background font-sans antialiased">
+    <header class="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur">
+      <div class="mx-auto flex h-14 max-w-5xl items-center gap-4 px-4">
+        <a href="/" class="text-lg font-bold tracking-tight">UOOC QA</a>
+        <nav class="flex items-center gap-3 text-sm text-muted-foreground">
+          <a href="/search" class="hover:text-foreground transition-colors">搜索</a>
+          <a href="/upload" class="hover:text-foreground transition-colors">上传</a>
+        </nav>
+        <div class="ml-auto">
+          <NavbarAuth client:load />
+        </div>
+      </div>
+    </header>
+    <main class="mx-auto max-w-5xl px-4 py-6">
+      <slot />
+    </main>
+  </body>
+</html>

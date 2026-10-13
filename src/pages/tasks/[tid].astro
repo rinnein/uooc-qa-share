@@ -1,0 +1,10 @@
+---
+import Layout from "@/layouts/Layout.astro";
+import TaskView from "@/components/TaskView";
+
+const { tid } = Astro.params;
+---
+
+<Layout title={`题组 ${tid}`}>
+  <TaskView tid={tid!} client:load />
+</Layout>

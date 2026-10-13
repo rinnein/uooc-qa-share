@@ -1,0 +1,10 @@
+---
+import Layout from "@/layouts/Layout.astro";
+import CourseView from "@/components/CourseView";
+
+const { cid } = Astro.params;
+---
+
+<Layout title={`课程 ${cid}`}>
+  <CourseView cid={cid!} client:load />
+</Layout>

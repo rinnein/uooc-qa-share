@@ -1,0 +1,10 @@
+---
+import Layout from "@/layouts/Layout.astro";
+import QuestionDetail from "@/components/QuestionDetail";
+
+const { id } = Astro.params;
+---
+
+<Layout title={`题目 #${id}`}>
+  <QuestionDetail questionId={id!} client:load />
+</Layout>

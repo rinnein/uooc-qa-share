@@ -1,0 +1,16 @@
+---
+import Layout from "@/layouts/Layout.astro";
+import UploadForm from "@/components/UploadForm";
+---
+
+<Layout title="上传题目">
+  <div class="space-y-6">
+    <div class="space-y-2">
+      <h1 class="text-2xl font-bold">上传题目与答案</h1>
+      <p class="text-muted-foreground">
+        粘贴 JSON 数据或使用 AI 辅助分析 PDF/图片后上传
+      </p>
+    </div>
+    <UploadForm client:load />
+  </div>
+</Layout>
