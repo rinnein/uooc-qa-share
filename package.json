@@ -17,6 +17,7 @@
     "@elysiajs/cors": "^1.4.2",
     "@fontsource-variable/geist": "^5.3.0",
     "@modelcontextprotocol/sdk": "^1.32.1",
+    "@t3-oss/env-core": "^0.13.11",
     "astro": "^7.3.8",
     "better-auth": "^1.7.7",
     "class-variance-authority": "^0.7.1",

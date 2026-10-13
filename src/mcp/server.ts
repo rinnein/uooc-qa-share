@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { taskGroups, questions, answers } from "@/db/schema";
 import { eq, sql } from "drizzle-orm";
 import { generateEmbedding } from "@/lib/embedding";
+import { env } from "@/lib/env";
 
 export function createMcpServer() {
   const server = new McpServer({
@@ -180,7 +181,7 @@ JSON 格式规范：
     async ({ data }) => {
       try {
         const body = JSON.parse(data);
-        const baseUrl = process.env.BETTER_AUTH_URL ?? "http://localhost:4321";
+        const baseUrl = env.BETTER_AUTH_URL;
         const res = await fetch(`${baseUrl}/api/upload/batch`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },

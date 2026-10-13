@@ -1,10 +1,11 @@
 import { Elysia } from "elysia";
 import { cors } from "@elysiajs/cors";
+import { env } from "@/lib/env";
 import { questionsRoutes } from "./questions";
 import { tasksRoutes } from "./tasks";
 import { uploadRoutes } from "./upload";
 
-const corsOrigins = (process.env.CORS_ORIGINS ?? "").split(",").filter(Boolean);
+const corsOrigins = env.CORS_ORIGINS.split(",").filter(Boolean);
 
 export const api = new Elysia({ prefix: "/api" })
   .use(

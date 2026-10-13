@@ -1,11 +1,13 @@
+import { env } from "@/lib/env";
+
 /**
  * Generate an embedding vector for text using an OpenAI-compatible API.
  * Returns null if the embedding service is not configured.
  */
 export async function generateEmbedding(text: string): Promise<number[] | null> {
-  const apiUrl = process.env.EMBEDDING_API_URL;
-  const apiKey = process.env.EMBEDDING_API_KEY;
-  const model = process.env.EMBEDDING_MODEL || "text-embedding-3-small";
+  const apiUrl = env.EMBEDDING_API_URL;
+  const apiKey = env.EMBEDDING_API_KEY;
+  const model = env.EMBEDDING_MODEL;
 
   if (!apiUrl || !apiKey) return null;
 
