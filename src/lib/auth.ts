@@ -1,15 +1,23 @@
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "@better-auth/drizzle-adapter";
-import { anonymous } from "better-auth/plugins";
-import { genericOAuth } from "better-auth/plugins";
-import { bearer } from "better-auth/plugins";
+import { jwt, anonymous, bearer, genericOAuth } from "better-auth/plugins";
+import { apiKey } from "@better-auth/api-key";
+import { agentAuth } from "@better-auth/agent-auth";
+import { mcp } from "@better-auth/mcp";
 import { db } from "@/db";
+import * as schema from "@/db/schema";
 import { env } from "@/lib/env";
 
 export const auth = betterAuth({
+  baseURL: env.BETTER_AUTH_URL,
   database: drizzleAdapter(db, {
     provider: "pg",
+    schema,
   }),
+  session: {
+    expiresIn: 60 * 60 * 24 * 31, // 31 days
+    updateAge: 60 * 60 * 24, // 1 day
+  },
   trustedOrigins: env.CORS_ORIGINS.split(",").filter(Boolean),
   socialProviders: {
     github: {
@@ -19,8 +27,95 @@ export const auth = betterAuth({
     },
   },
   plugins: [
+    jwt(),
     anonymous(),
     bearer(),
+    apiKey({
+      enableSessionForAPIKeys: true,
+      apiKeyHeaders: ["x-api-key", "api-key"],
+      customAPIKeyGetter: (ctx) => {
+        const headerKey = ctx.headers?.get("x-api-key") || ctx.headers?.get("api-key");
+        if (headerKey) return headerKey;
+
+        const authHeader = ctx.headers?.get("authorization");
+        if (authHeader?.startsWith("Bearer ")) {
+          const token = authHeader.slice(7).trim();
+          if (token.startsWith("uooc_") || token.length >= 32) return token;
+        }
+
+        const cookieHeader = ctx.headers?.get("cookie") || "";
+        const match = cookieHeader.match(/(?:^|;\s*)(?:apiKey|uooc_api_key)=([^;]+)/);
+        if (match?.[1]) return decodeURIComponent(match[1]);
+
+        return null;
+      },
+    }),
+    agentAuth({
+      providerName: "UOOC QA Share",
+      providerDescription: "UOOC QA sharing platform for AI agents",
+      modes: ["delegated", "autonomous"],
+      resolveAutonomousUser: async ({ agentId, agentMode }) => {
+        return {
+          id: `agent_${agentId}`,
+          name: `AI Agent (${agentMode})`,
+          email: `agent_${agentId}@agent.local`,
+          role: "agent",
+          isAnonymous: true,
+        };
+      },
+      capabilities: [
+        {
+          name: "search_questions",
+          description: "Search questions by stem text or semantic query",
+          input: {
+            type: "object",
+            properties: { query: { type: "string" } },
+            required: ["query"],
+          },
+        },
+        {
+          name: "get_task_answers",
+          description: "Get all questions and answers for a task group by tid",
+          input: {
+            type: "object",
+            properties: { tid: { type: "string" } },
+            required: ["tid"],
+          },
+        },
+        {
+          name: "get_question_answer",
+          description: "Get single question and its answers by question ID",
+          input: {
+            type: "object",
+            properties: { question_id: { type: "string" } },
+            required: ["question_id"],
+          },
+        },
+        {
+          name: "get_course_tasks",
+          description: "Get all task groups under a course by cid",
+          input: {
+            type: "object",
+            properties: { cid: { type: "string" } },
+            required: ["cid"],
+          },
+        },
+        {
+          name: "upload_answers",
+          description: "Batch upload questions and answers for a task group",
+          input: {
+            type: "object",
+            properties: { data: { type: "string" } },
+            required: ["data"],
+          },
+        },
+      ],
+    }),
+    mcp({
+      loginPage: "/login",
+      consentPage: "/consent",
+      resource: `${env.BETTER_AUTH_URL}/mcp`,
+    }),
     genericOAuth({
       config: [
         {

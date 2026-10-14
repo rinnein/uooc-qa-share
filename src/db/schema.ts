@@ -12,58 +12,15 @@ import {
   vector,
 } from "drizzle-orm/pg-core";
 
-// ── Auth tables (managed by better-auth, defined here for Drizzle awareness) ──
+// Re-export all Better Auth schema tables and relations
+export * from "./auth-schema.ts";
+import { user } from "./auth-schema.ts";
 
-export const users = pgTable("users", {
-  id: text("id").primaryKey(),
-  name: text("name").notNull(),
-  email: text("email").notNull().unique(),
-  emailVerified: boolean("email_verified").notNull().default(false),
-  image: text("image"),
-  isAnonymous: boolean("is_anonymous").default(false),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
-
-export const sessions = pgTable("sessions", {
-  id: text("id").primaryKey(),
-  userId: text("user_id")
-    .notNull()
-    .references(() => users.id, { onDelete: "cascade" }),
-  token: text("token").notNull().unique(),
-  expiresAt: timestamp("expires_at").notNull(),
-  ipAddress: text("ip_address"),
-  userAgent: text("user_agent"),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
-
-export const accounts = pgTable("accounts", {
-  id: text("id").primaryKey(),
-  userId: text("user_id")
-    .notNull()
-    .references(() => users.id, { onDelete: "cascade" }),
-  accountId: text("account_id").notNull(),
-  providerId: text("provider_id").notNull(),
-  accessToken: text("access_token"),
-  refreshToken: text("refresh_token"),
-  accessTokenExpiresAt: timestamp("access_token_expires_at"),
-  refreshTokenExpiresAt: timestamp("refresh_token_expires_at"),
-  scope: text("scope"),
-  idToken: text("id_token"),
-  password: text("password"),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
-
-export const verifications = pgTable("verifications", {
-  id: text("id").primaryKey(),
-  identifier: text("identifier").notNull(),
-  value: text("value").notNull(),
-  expiresAt: timestamp("expires_at").notNull(),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+// Backwards-compatible aliases
+export { user as users };
+export { session as sessions } from "./auth-schema.ts";
+export { account as accounts } from "./auth-schema.ts";
+export { verification as verifications } from "./auth-schema.ts";
 
 // ── Application tables ──
 
@@ -119,7 +76,7 @@ export const answers = pgTable(
       .references(() => questions.id, { onDelete: "cascade" }),
     values: jsonb("values").notNull(), // ["A","C"] or ["填空内容"]
     source: text("source").notNull().default("user"), // 'user' | 'plugin' | 'mcp'
-    submittedBy: text("submitted_by").references(() => users.id, {
+    submittedBy: text("submitted_by").references(() => user.id, {
       onDelete: "set null",
     }),
     confidence: real("confidence").notNull().default(0.5),

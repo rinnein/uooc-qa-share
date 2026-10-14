@@ -2,10 +2,16 @@
 
 所有 API 端点均在 `/api/` 路径下。支持 CORS 跨域访问。
 
-## 认证
+## 认证与 API Key
 
-- **Cookie 认证**: 浏览器自动携带
-- **Bearer Token**: 在 `Authorization: Bearer <token>` 头中携带会话令牌（适用于 API 调用）
+- **Cookie 认证**: 浏览器与 Webview 自动携带，Session 有效期为 31 天。
+- **API Key 认证**: 适用于自动化插件与外部调用。在 HTTP 请求头中传入 `x-api-key: <key>` 或 `Authorization: Bearer <key>`。
+- **Webview 免密注入**: 软件型插件（如 Tauri / Electron 应用）内部 Webview 可直接通过 URL 携带 `?apiKey=...`、或在页面加载前注入 `window.__UOOC_API_KEY__` 或设置 Cookie `apiKey`，平台自动完成免密登录并持久化。
+- **自动匿名注册与下发 API Key**:
+  - `POST /api/auth/anonymous-key`：插件调用的专用 Auth API，自动完成基于 Better Auth Anonymous 插件的匿名注册并下发持久 `apiKey`。业务上传接口（如 `/api/upload/batch`）不负责写 Auth 数据库，插件应先通过该 Auth 接口或登录获取凭据。
+- **Agent 临时态认证**:
+  - Agent 可通过 `/.well-known/agent-configuration` 发现服务，采用 Agent Auth 协议通过短时 JWT 接入。
+  - MCP 端点兼容 OAuth 2.1 与 Agent Auth，自动为 Agent 分配临时匿名用户态。
 
 匿名用户可查询和添加新答案，但不可覆盖已有的正确答案。通过 OAuth 认证的用户可覆盖更新。
 

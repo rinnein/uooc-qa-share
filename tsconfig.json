@@ -7,6 +7,6 @@
     "jsx": "react-jsx",
     "jsxImportSource": "react"
   },
-  "include": [".astro/types.d.ts", "**/*"],
+  "include": [".astro/types.d.ts", "**/*", "src/.well-known/**/*", "src/pages/.well-known/**/*"],
   "exclude": ["dist"]
 }

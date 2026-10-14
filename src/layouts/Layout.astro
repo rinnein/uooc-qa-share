@@ -18,6 +18,36 @@ const { title = "UOOC QA Share" } = Astro.props;
     <link rel="icon" href="/favicon.ico" />
     <meta name="generator" content={Astro.generator} />
     <title>{title}</title>
+    <script is:inline>
+      // Webview / URL API Key auto-injection and persistence
+      (function () {
+        try {
+          var url = new URL(window.location.href);
+          var apiKey = url.searchParams.get("apiKey") || url.searchParams.get("api_key");
+
+          if (!apiKey && window.__UOOC_API_KEY__) {
+            apiKey = window.__UOOC_API_KEY__;
+          }
+
+          if (apiKey) {
+            localStorage.setItem("uooc_api_key", apiKey);
+            document.cookie =
+              "apiKey=" +
+              encodeURIComponent(apiKey) +
+              "; path=/; max-age=2678400; SameSite=Lax";
+
+            // Clean up the parameter from URL query string without reloading
+            if (url.searchParams.has("apiKey") || url.searchParams.has("api_key")) {
+              url.searchParams.delete("apiKey");
+              url.searchParams.delete("api_key");
+              window.history.replaceState(null, "", url.toString());
+            }
+          }
+        } catch (e) {
+          console.error("Failed to initialize injected API key", e);
+        }
+      })();
+    </script>
   </head>
   <body class="min-h-screen bg-background font-sans antialiased">
     <header class="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur">

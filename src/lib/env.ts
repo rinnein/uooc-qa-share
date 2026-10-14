@@ -1,9 +1,28 @@
 import { createEnv } from "@t3-oss/env-core";
 import { z } from "zod";
+import fs from "node:fs";
+import path from "node:path";
+
+// Ensure .env is loaded into process.env before createEnv evaluates
+if (typeof process !== "undefined" && typeof process.loadEnvFile === "function") {
+  let cur = process.cwd();
+  for (let i = 0; i < 4; i++) {
+    const envPath = path.join(cur, ".env");
+    if (fs.existsSync(envPath)) {
+      try {
+        process.loadEnvFile(envPath);
+        break;
+      } catch {}
+    }
+    const parent = path.dirname(cur);
+    if (parent === cur) break;
+    cur = parent;
+  }
+}
 
 export const env = createEnv({
   server: {
-    DATABASE_URL: z.string().min(1).default("postgresql://localhost:5432/uooc_qa_share"),
+    DATABASE_URL: z.string().min(1),
     BETTER_AUTH_SECRET: z.string().min(1).default("change-me-to-a-random-secret-in-production"),
     BETTER_AUTH_URL: z.string().url().default("http://localhost:4321"),
 

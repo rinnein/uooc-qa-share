@@ -8,17 +8,12 @@ import { auth } from "@/lib/auth";
 
 const QuestionSchema = t.Object({
   question_id: t.String(),
-  type: t.Union([
-    t.Literal("single"),
-    t.Literal("multiple"),
-    t.Literal("judge"),
-    t.Literal("text"),
-  ]),
-  stem: t.Optional(t.Nullable(t.String())),
-  options: t.Optional(t.Nullable(t.Array(t.Object({ id: t.String(), text: t.String() })))),
+  type: t.String(),
+  stem: t.Optional(t.String()),
+  options: t.Optional(t.Array(t.Object({ id: t.String(), text: t.String() }))),
   blanks: t.Optional(t.Number()),
-  correct_answers: t.Optional(t.Nullable(t.Array(t.String()))),
-  wrong_answers: t.Optional(t.Nullable(t.Array(t.String()))),
+  correct_answers: t.Optional(t.Array(t.String())),
+  wrong_answers: t.Optional(t.Array(t.String())),
 });
 
 const BatchUploadSchema = t.Object({
@@ -29,17 +24,50 @@ const BatchUploadSchema = t.Object({
   questions: t.Array(QuestionSchema),
 });
 
-async function resolveSession(request: Request) {
-  const session = await auth.api.getSession({ headers: request.headers });
-  return session;
+async function resolveSession(request: Request): Promise<{
+  userId: string | null;
+  isAnonymous: boolean;
+}> {
+  // 1. Try standard session / apiKey session via Better Auth
+  try {
+    const session = await auth.api.getSession({ headers: request.headers });
+    if (session?.user) {
+      return {
+        userId: session.user.id,
+        isAnonymous: Boolean(session.user.isAnonymous),
+      };
+    }
+  } catch {}
+
+  // 2. Try explicit verifyApiKey if x-api-key header or Bearer is present
+  const apiKey =
+    request.headers.get("x-api-key") ||
+    request.headers.get("api-key") ||
+    (request.headers.get("authorization")?.startsWith("Bearer ")
+      ? request.headers.get("authorization")!.slice(7).trim()
+      : null);
+
+  if (apiKey) {
+    try {
+      const verified = await auth.api.verifyApiKey({ body: { key: apiKey } });
+      if (verified?.valid && verified.key?.referenceId) {
+        return {
+          userId: verified.key.referenceId,
+          isAnonymous: true,
+        };
+      }
+    } catch {}
+  }
+
+  return { userId: null, isAnonymous: true };
 }
 
 export const uploadRoutes = new Elysia({ prefix: "/upload" }).post(
   "/batch",
   async ({ body, request }) => {
-    const session = await resolveSession(request);
-    const userId = session?.user?.id ?? null;
-    const isAnonymous = !session || session.user.isAnonymous === true;
+    const sessionInfo = await resolveSession(request);
+    const userId = sessionInfo.userId;
+    const isAnonymous = sessionInfo.isAnonymous;
     const source = "plugin";
 
     const { tid, cid, questions: inputQuestions } = body;
