@@ -53,10 +53,59 @@ export default function LoginButtons() {
   if (session) {
     return (
       <div className="space-y-4 rounded-lg border p-4 text-center">
-        <p className="text-sm">
-          已登录为 <span className="font-medium">{session.user.name}</span>
-          {session.user.isAnonymous && <span className="ml-1 text-muted-foreground">(匿名)</span>}
-        </p>
+        <div>
+          <p className="text-sm">
+            已登录为 <span className="font-medium">{session.user.name}</span>
+            {session.user.isAnonymous && (
+              <span className="ml-1 text-xs text-amber-600 dark:text-amber-400 font-medium">
+                (匿名账号)
+              </span>
+            )}
+          </p>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            {session.user.isAnonymous
+              ? "权限：仅可添加新答案，无法覆盖已有答案"
+              : "权限：已认证用户，可更新与覆盖答案"}
+          </p>
+        </div>
+
+        {session.user.isAnonymous && (
+          <div className="rounded-md border border-amber-200 bg-amber-50/60 p-3 text-left dark:border-amber-900/60 dark:bg-amber-950/20 space-y-2">
+            <h4 className="text-xs font-semibold text-amber-800 dark:text-amber-300">
+              绑定 OAuth 主账号升级
+            </h4>
+            <p className="text-xs text-muted-foreground">
+              将当前匿名账户绑定至 OAuth 账号（或作为主账户绑定）：您的 API
+              Key、历史提交答案将无缝继承并升级为正式权限。
+            </p>
+            <div className="flex flex-col gap-1.5 pt-1">
+              <button
+                type="button"
+                onClick={() =>
+                  void authClient.linkSocial({
+                    provider: "github",
+                    callbackURL: "/login",
+                  })
+                }
+                className="rounded bg-[#24292f] px-3 py-1.5 text-xs font-medium text-white hover:bg-[#24292f]/90 transition-colors"
+              >
+                绑定 GitHub 账号
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  void authClient.linkSocial({
+                    provider: "bili-sign",
+                    callbackURL: "/login",
+                  })
+                }
+                className="rounded bg-[#fb7299] px-3 py-1.5 text-xs font-medium text-white hover:bg-[#fb7299]/90 transition-colors"
+              >
+                绑定 bili-sign 账号
+              </button>
+            </div>
+          </div>
+        )}
 
         <div className="space-y-2 border-t pt-3">
           <button

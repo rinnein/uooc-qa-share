@@ -9,6 +9,9 @@
 - **Webview 免密注入**: 软件型插件（如 Tauri / Electron 应用）内部 Webview 可直接通过 URL 携带 `?apiKey=...`、或在页面加载前注入 `window.__UOOC_API_KEY__` 或设置 Cookie `apiKey`，平台自动完成免密登录并持久化。
 - **自动匿名注册与下发 API Key**:
   - `POST /api/auth/anonymous-key`：插件调用的专用 Auth API，自动完成基于 Better Auth Anonymous 插件的匿名注册并下发持久 `apiKey`。业务上传接口（如 `/api/upload/batch`）不负责写 Auth 数据库，插件应先通过该 Auth 接口或登录获取凭据。
+- **OAuth 认证与账号绑定/升级**:
+  - 用户可在插件或平台设置中通过 OAuth（GitHub 或 bili-sign.rinne.in）进行主账号登录并生成具有完整修改权限的 API Key。
+  - 对于初始使用匿名账号的插件/用户，支持在账户面板调用 `linkSocial` 将匿名账户与 OAuth 绑定（作为主账号或合并至已有 OAuth 账号），原匿名用户名下的所有历史提交试题与 API Key 均会自动迁移，永久保留并解锁覆盖更新权限。
 - **Agent 临时态认证**:
   - Agent 可通过 `/.well-known/agent-configuration` 发现服务，采用 Agent Auth 协议通过短时 JWT 接入。
   - MCP 端点兼容 OAuth 2.1 与 Agent Auth，自动为 Agent 分配临时匿名用户态。

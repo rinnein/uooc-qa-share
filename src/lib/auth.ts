@@ -4,6 +4,7 @@ import { jwt, anonymous, bearer, genericOAuth } from "better-auth/plugins";
 import { apiKey } from "@better-auth/api-key";
 import { agentAuth } from "@better-auth/agent-auth";
 import { mcp } from "@better-auth/mcp";
+import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import * as schema from "@/db/schema";
 import { env } from "@/lib/env";
@@ -28,7 +29,24 @@ export const auth = betterAuth({
   },
   plugins: [
     jwt(),
-    anonymous(),
+    anonymous({
+      onLinkAccount: async ({ anonymousUser, newUser }) => {
+        // Seamlessly transfer all submitted answers and API keys from anonymous account to OAuth account
+        try {
+          await db
+            .update(schema.answers)
+            .set({ submittedBy: newUser.user.id })
+            .where(eq(schema.answers.submittedBy, anonymousUser.user.id));
+
+          await db
+            .update(schema.apikey)
+            .set({ referenceId: newUser.user.id })
+            .where(eq(schema.apikey.referenceId, anonymousUser.user.id));
+        } catch (e) {
+          console.error("Failed to migrate anonymous data on link account:", e);
+        }
+      },
+    }),
     bearer(),
     apiKey({
       enableSessionForAPIKeys: true,

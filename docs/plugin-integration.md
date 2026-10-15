@@ -50,18 +50,44 @@
 
 ## 2. 环境准备与鉴权凭据配置
 
-客户端插件需在配置项中增加题库服务器地址与鉴权信息：
+客户端插件需在配置项中增加题库服务器地址与鉴权凭证：
 
-| 配置项       | 环境变量/配置文件字段 | 示例值                          | 说明                                                                      |
-| ------------ | --------------------- | ------------------------------- | ------------------------------------------------------------------------- |
-| 服务端基地址 | `QA_SERVER_URL`       | `http://localhost:4321`         | 平台 API 根路径                                                           |
-| API Key 凭证 | `QA_SERVER_API_KEY`   | `uooc_...` (自动下发或手动生成) | 插件保存的专属 API Key，持久化登录态；支持覆盖/添加答案（取决于账号权限） |
+| 配置项       | 环境变量/配置文件字段 | 示例值                          | 说明                                      |
+| ------------ | --------------------- | ------------------------------- | ----------------------------------------- |
+| 服务端基地址 | `QA_SERVER_URL`       | `http://localhost:4321`         | 平台 API 根路径                           |
+| API Key 凭证 | `QA_SERVER_API_KEY`   | `uooc_...` (自动申请或登录生成) | 插件的持久凭据；可直接鉴权，有效期 365 天 |
 
-### 2.1 自动通过 Better-Auth API 注册并下发 API Key（推荐流程）
+---
 
-为保证插件即开即用且遵循 Auth 职责分离规范，插件在未配置 API Key 时应通过 Better-Auth 接口自动完成注册：
+### 2.1 认证模式与权限对比
 
-1. **自动注册获取 Key**：插件初次启动或首次调用前，向 Auth 端点发送注册请求：
+平台对不同身份提供差异化的答案管控策略：
+
+| 身份类型           | 凭证来源                                             | 读权限 (查题/剪枝) | 新题写入 | 历史答案覆盖/修改                                          |
+| ------------------ | ---------------------------------------------------- | ------------------ | -------- | ---------------------------------------------------------- |
+| **OAuth 认证用户** | 用户在插件内点击登录完成 OAuth（GitHub / bili-sign） | ✅ 允许            | ✅ 允许  | ✅ **允许**（发现错误时可直接纠正旧答案）                  |
+| **匿名账号用户**   | 插件未配置时自动通过 Auth API 申请的专属账号         | ✅ 允许            | ✅ 允许  | ❌ **拒绝**（防刷机制，返回 `denied_anonymous_overwrite`） |
+
+---
+
+### 2.2 方案一：在设置中通过 OAuth 预先登录（推荐正式用户）
+
+若插件支持用户交互界面（如桌面客户端 `your-szu-life` 或命令行引导）：
+
+1. **提供登录入口**：在插件“设置”或“题库同步”面板中放置 **“登录题库共享平台”** 按钮。
+2. **拉起 OAuth 流程**：点击后通过系统默认浏览器或内嵌 Webview 打开：
+   - GitHub 登录：`http://your-qa-server.com/api/auth/sign-in/social?provider=github&callbackURL=...`
+   - bili-sign 登录：`http://your-qa-server.com/api/auth/sign-in/social?provider=bili-sign&callbackURL=...`
+3. **获取与存储 API Key**：登录成功后，前端或插件通过调用 `POST /api/auth/api-key/create` 为该插件签发一把专属 `API Key`，并持久化保存于本地配置中。
+4. **享受全权限**：后续插件在请求头带上 `x-api-key: <key>` 时，所有上传操作均直接继承 OAuth 用户的正式更新权限。
+
+---
+
+### 2.3 方案二：未提前登录时的优雅降级（自动申请匿名账号）
+
+如果用户在使用相关功能前**未**在设置内配置或登录，插件切勿弹窗阻断答题流程，而应自动静默降级为匿名账户：
+
+1. **自动注册获取 Key**：插件检测到本地尚未保存 `QA_SERVER_API_KEY` 时，主动向 Auth 端点发送注册请求：
    ```http
    POST /api/auth/anonymous-key
    Host: your-qa-server.com
@@ -71,18 +97,42 @@
    {
      "ok": true,
      "apiKey": "uooc_8a9f...",
-     "user": { "id": "...", "name": "Anonymous" },
+     "user": { "id": "user_xyz", "name": "Anonymous", "isAnonymous": true },
      "token": "..."
    }
    ```
-2. **本地持久化存储**：插件收到后将 `apiKey` 回写到本地配置文件（如 `config.txt` 或应用数据库），持久化保存该登录态。
-3. **后续业务请求鉴权**：在随后的所有业务 API（如上传试题 `POST /api/upload/batch`、查询试卷）中，只需在 HTTP 请求头附带：
+2. **本地持久化存储**：插件收到后将 `apiKey` 回写到本地配置文件（如 `config.txt` 或 SQLite），后续每次重启均复用此 Key。
+3. **正常发起业务请求**：在随后的所有业务 API（如上传试题 `POST /api/upload/batch`、查询试卷）中，只需在 HTTP 请求头附带：
    ```http
    x-api-key: uooc_8a9f...
    ```
-   （或 `Authorization: Bearer uooc_8a9f...`），服务端即可识别该插件身份，Session 默认长达 31 天有效。上传接口保持纯粹，不混入 Auth 注册写库行为。
+   服务端即可识别该插件身份，Session 默认长达 31 天有效。上传接口保持纯粹，不混入 Auth 注册写库行为。
 
-### 2.2 客户端软件内部 Webview 免密集成
+---
+
+### 2.4 账号绑定、合并与升级机制（在账户面板操作）
+
+即使用户初始使用了自动下发的匿名账号，未来也可以在 UOOC 账户面板或题库平台的个人中心随时完成绑定与升级，历史数据绝不丢失：
+
+#### 场景 A：将当前匿名账号作为主账号直接绑定 OAuth
+
+用户此前从未注册过题库账号。此时在账户中心点击 **“绑定 GitHub”** 或 **“绑定 bili-sign”**：
+
+- 前端调用 `authClient.linkSocial({ provider: "github", callbackURL: "/login" })`；
+- 原匿名用户账号在底层直接平滑升级为认证用户（`isAnonymous: false`）；
+- 插件此前使用的 `API Key`、历史上传的全部试题记录与贡献数据**完整保留**，并立即可用覆盖更新权限。
+
+#### 场景 B：将当前匿名账号合并到已有 OAuth 账户
+
+若用户此前已经在其他设备上通过 OAuth 注册过正式题库账号：
+
+- 用户在账户中心将当前匿名账号关联至已有账户时，Better Auth 触发 `onLinkAccount({ anonymousUser, newUser })` 钩子；
+- **自动数据迁移**：服务端会在事务中自动将原匿名用户名下的全部答案提交记录（`answers` 表的 `submitted_by`）以及已签发的 API Key（`apikey` 表的 `reference_id`）所有权完整过户给已有正式账户；
+- 插件无需重新配置或修改本地的 `API Key`，继续使用原有 Key 请求即可自动识别为正式认证用户！
+
+---
+
+### 2.5 客户端软件内部 Webview 免密集成
 
 对于如 `your-szu-life` 等拥有独立桌面/手机客户端的插件，若希望在客户端内部以 Webview 展示题库前端界面：
 
@@ -253,15 +303,53 @@ GET https://www.uooc.net.cn/exam/view?cid={cid}&tid={tid}
 
 ```javascript
 // utils/qa-client.js
+const fs = require("fs");
+const path = require("path");
+
 const QA_SERVER = process.env.UOOC_QA_SERVER || "http://localhost:4321";
-const QA_TOKEN = process.env.UOOC_QA_TOKEN || "";
+let QA_API_KEY = process.env.UOOC_QA_API_KEY || "";
+
+/**
+ * 获取或自动申请 API Key：
+ * 1. 若配置中已有（OAuth 登录生成或此前已下发），直接使用；
+ * 2. 若未配置，自动调用 /api/auth/anonymous-key 注册匿名账号并回写保存。
+ */
+async function ensureApiKey() {
+  if (QA_API_KEY) return QA_API_KEY;
+
+  try {
+    const res = await fetch(`${QA_SERVER}/api/auth/anonymous-key`, {
+      method: "POST",
+    });
+    const data = await res.json();
+    if (data?.ok && data?.apiKey) {
+      QA_API_KEY = data.apiKey;
+      console.log(`[QA-Share] 已自动申请匿名账户凭证: ${QA_API_KEY.slice(0, 15)}...`);
+
+      // 回写到本地 config.txt 以便持久复用
+      const cfgPath = path.join(__dirname, "..", "config.txt");
+      if (fs.existsSync(cfgPath)) {
+        fs.appendFileSync(cfgPath, `\nQA_SERVER_API_KEY=${QA_API_KEY}\n`);
+      }
+      return QA_API_KEY;
+    }
+  } catch (e) {
+    console.warn(`[QA-Share] 自动申请 API Key 失败: ${e.message}`);
+  }
+  return "";
+}
 
 async function fetchTaskAnswers(tid, cid) {
   try {
+    const apiKey = await ensureApiKey();
     const url = cid
       ? `${QA_SERVER}/api/courses/${cid}/tasks/${tid}`
       : `${QA_SERVER}/api/tasks/${tid}`;
-    const res = await fetch(url);
+
+    const headers = {};
+    if (apiKey) headers["x-api-key"] = apiKey;
+
+    const res = await fetch(url, { headers });
     if (!res.ok) return null;
     const data = await res.json();
     return data.questions || [];
@@ -273,8 +361,9 @@ async function fetchTaskAnswers(tid, cid) {
 
 async function uploadTaskResults(payload) {
   try {
+    const apiKey = await ensureApiKey();
     const headers = { "Content-Type": "application/json" };
-    if (QA_TOKEN) headers["Authorization"] = `Bearer ${QA_TOKEN}`;
+    if (apiKey) headers["x-api-key"] = apiKey;
 
     const res = await fetch(`${QA_SERVER}/api/upload/batch`, {
       method: "POST",
@@ -290,7 +379,7 @@ async function uploadTaskResults(payload) {
   }
 }
 
-module.exports = { fetchTaskAnswers, uploadTaskResults };
+module.exports = { fetchTaskAnswers, uploadTaskResults, ensureApiKey };
 ```
 
 ### 6.2 在 `utils/quiz.js` 中接入
@@ -346,35 +435,77 @@ if (quizPassed) {
 
 针对 `/home/rinne/project/your-szu-life` 项目，可在 Tauri 后端 `src-tauri/src/uooc/quiz/` 中引入 HTTP 客户端调用，或在前端 `src/uooc/QuizPanel.tsx` 中增加自动载入与上报能力。
 
-### 7.1 Rust 后端接入 (示例)
+### 7.1 设置面板 OAuth 登录与匿名自动降级逻辑
 
-在 `src-tauri/src/uooc/quiz/` 中：
+针对 `your-szu-life` 等拥有图形界面的客户端：
+
+1. **设置中心提供 OAuth 登录**：
+   在应用设置或 UOOC 配置选项卡中提供「连接题库平台」按钮。用户点击后，调用系统浏览器或打开 OAuth 认证窗口（GitHub 或 bili-sign.rinne.in）。完成后通过 deep link 或本地回调拿到 API Key 存入应用状态。
+2. **未登录时静默申请匿名账号**：
+   若用户未登录，在初始化或首次查询/上报测验时，自动调用 `POST /api/auth/anonymous-key` 生成匿名账号与持久 `apiKey`，保存在本地数据库或安全存储中。
+3. **账户绑定与升级入口**：
+   在应用内的 UOOC 账户详情面板中，如果当前处于匿名状态，提示用户：“绑定 OAuth 账号可解锁题目修改与覆盖权限”。用户点击后调用 `authClient.linkSocial({ provider })`，即可将当前匿名账户及其所有的历史提交合并至 OAuth 账号。
+
+### 7.2 Rust 后端接入 (示例)
+
+在 `src-tauri/src/uooc/quiz/` 中实现自动获取凭据与请求：
 
 ```rust
-pub async fn query_qa_platform(server: &str, tid: &str) -> Option<Vec<QuestionRecord>> {
+use serde::{Deserialize, Serialize};
+
+#[derive(Serialize, Deserialize)]
+struct AnonymousKeyResponse {
+    ok: bool,
+    #[serde(rename = "apiKey")]
+    api_key: Option<String>,
+}
+
+pub async fn get_or_create_api_key(server: &str, stored_key: Option<&str>) -> Option<String> {
+    if let Some(key) = stored_key {
+        if !key.trim().is_empty() {
+            return Some(key.to_string());
+        }
+    }
+
+    // 未配置时自动调用 Auth 端点静默注册匿名账号
+    let url = format!("{}/api/auth/anonymous-key", server.trim_end_matches('/'));
+    let resp = reqwest::Client::new().post(&url).send().await.ok()?;
+    let data = resp.json::<AnonymousKeyResponse>().await.ok()?;
+    data.api_key
+}
+
+pub async fn query_qa_platform(
+    server: &str,
+    api_key: Option<&str>,
+    tid: &str,
+) -> Option<Vec<QuestionRecord>> {
     let url = format!("{}/api/tasks/{}", server.trim_end_matches('/'), tid);
-    let resp = reqwest::get(&url).await.ok()?.json::<TaskResponse>().await.ok()?;
+    let mut req = reqwest::Client::new().get(&url);
+    if let Some(k) = api_key {
+        req = req.header("x-api-key", k);
+    }
+    let resp = req.send().await.ok()?.json::<TaskResponse>().await.ok()?;
     Some(resp.questions)
 }
 
 pub async fn report_qa_results(
     server: &str,
-    token: Option<&str>,
+    api_key: Option<&str>,
     payload: &BatchUploadPayload,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let client = reqwest::Client::new();
     let mut req = client
         .post(format!("{}/api/upload/batch", server.trim_end_matches('/')))
         .json(payload);
-    if let Some(t) = token {
-        req = req.header("Authorization", format!("Bearer {}", t));
+    if let Some(k) = api_key {
+        req = req.header("x-api-key", k);
     }
     req.send().await?;
     Ok(())
 }
 ```
 
-### 7.2 前端集成 (`src/uooc/QuizPanel.tsx`)
+### 7.3 前端集成 (`src/uooc/QuizPanel.tsx`)
 
 在测验加载完成后自动拉取题库：
 

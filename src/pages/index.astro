@@ -16,7 +16,7 @@ import SearchBar from "@/components/SearchBar";
       <SearchBar client:load />
     </div>
 
-    <div class="grid gap-4 sm:grid-cols-3 w-full max-w-2xl text-center">
+    <div class="grid gap-4 sm:grid-cols-4 w-full max-w-3xl text-center">
       <div class="rounded-lg border p-4 space-y-1">
         <div class="text-2xl">🔍</div>
         <h3 class="font-semibold">搜索题目</h3>
@@ -38,6 +38,13 @@ import SearchBar from "@/components/SearchBar";
           为 fuckuooc、your-szu-life 等插件提供 API
         </p>
       </div>
+      <a href="/mcp-guide" class="rounded-lg border border-primary/30 bg-primary/5 p-4 space-y-1 hover:bg-primary/10 transition-colors block">
+        <div class="text-2xl">🤖</div>
+        <h3 class="font-semibold text-primary">MCP + Agent</h3>
+        <p class="text-sm text-muted-foreground">
+          支持 Claude、Cursor 等本地 Agent 自动清洗入库
+        </p>
+      </a>
     </div>
   </div>
 </Layout>
