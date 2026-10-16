@@ -3,13 +3,19 @@ import { db } from "@/db";
 import { courses, taskGroups, questions, answers } from "@/db/schema";
 import { eq, and, sql } from "drizzle-orm";
 import { hashStem } from "@/lib/stem";
-import { generateEmbedding } from "@/lib/embedding";
+import { EMBEDDING_DIMENSIONS, resolveEmbedding } from "@/lib/embedding";
 import { auth } from "@/lib/auth";
 
 const QuestionSchema = t.Object({
   question_id: t.String(),
   type: t.String(),
   stem: t.Optional(t.String()),
+  embedding: t.Optional(
+    t.Array(t.Number(), {
+      minItems: EMBEDDING_DIMENSIONS,
+      maxItems: EMBEDDING_DIMENSIONS,
+    }),
+  ),
   options: t.Optional(t.Array(t.Object({ id: t.String(), text: t.String() }))),
   blanks: t.Optional(t.Number()),
   correct_answers: t.Optional(t.Array(t.String())),
@@ -104,6 +110,10 @@ export const uploadRoutes = new Elysia({ prefix: "/upload" }).post(
     }[] = [];
 
     for (const q of inputQuestions) {
+      // Prefer a plugin-provided vector. Only ask the server-side model when
+      // the plugin omitted one and embedding generation is configured.
+      const embedding = await resolveEmbedding(q.stem, q.embedding);
+
       // ── Step 1: Find or create question ──
       // 1. Direct ID match
       let existing = await db.query.questions.findFirst({
@@ -119,24 +129,21 @@ export const uploadRoutes = new Elysia({ prefix: "/upload" }).post(
           })) ?? undefined;
       }
 
-      // 3. Fallback: match by vector similarity if stem is provided and direct ID/hash match failed
-      if (!existing && q.stem) {
-        const embedding = await generateEmbedding(q.stem);
-        if (embedding) {
-          const vectorStr = `[${embedding.join(",")}]`;
-          const similar = await db.execute(sql`
-            SELECT q.*, 1 - (q.stem_embedding <=> ${vectorStr}::vector) AS similarity
-            FROM questions q
-            WHERE q.tid = ${tid} AND q.stem_embedding IS NOT NULL
-            ORDER BY q.stem_embedding <=> ${vectorStr}::vector
-            LIMIT 1
-          `);
-          if (
-            similar.length > 0 &&
-            Number((similar[0] as Record<string, unknown>).similarity) >= 0.85
-          ) {
-            existing = similar[0] as unknown as typeof questions.$inferSelect;
-          }
+      // 3. Fallback: match by vector similarity if a vector is available
+      if (!existing && embedding) {
+        const vectorStr = `[${embedding.join(",")}]`;
+        const similar = await db.execute(sql`
+          SELECT q.*, 1 - (q.stem_embedding <=> ${vectorStr}::vector) AS similarity
+          FROM questions q
+          WHERE q.tid = ${tid} AND q.stem_embedding IS NOT NULL
+          ORDER BY q.stem_embedding <=> ${vectorStr}::vector
+          LIMIT 1
+        `);
+        if (
+          similar.length > 0 &&
+          Number((similar[0] as Record<string, unknown>).similarity) >= 0.85
+        ) {
+          existing = similar[0] as unknown as typeof questions.$inferSelect;
         }
       }
 
@@ -150,9 +157,8 @@ export const uploadRoutes = new Elysia({ prefix: "/upload" }).post(
         if (q.stem && !existing.stem) {
           updates.stem = q.stem;
           updates.stemHash = hashStem(q.stem);
-          const embedding = await generateEmbedding(q.stem);
-          if (embedding) updates.stemEmbedding = embedding;
         }
+        if (embedding && !existing.stemEmbedding) updates.stemEmbedding = embedding;
         if (q.options && !existing.options) {
           updates.options = q.options;
         }
@@ -161,7 +167,6 @@ export const uploadRoutes = new Elysia({ prefix: "/upload" }).post(
       } else {
         // Create new question
         const stemHash = q.stem ? hashStem(q.stem) : null;
-        const embedding = q.stem ? await generateEmbedding(q.stem) : null;
 
         const [inserted] = await db
           .insert(questions)

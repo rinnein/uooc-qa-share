@@ -126,6 +126,7 @@
         { "id": "A", "text": "选项A" },
         { "id": "B", "text": "选项B" }
       ],
+      "embedding": [0.0123, 0.0456, 0.0789],
       "correct_answers": ["A"],
       "wrong_answers": null
     },
@@ -148,6 +149,7 @@
 | `questions[].question_id`     | ✅   | UOOC 题目标识符                          |
 | `questions[].type`            | ✅   | `single` / `multiple` / `judge` / `text` |
 | `questions[].stem`            | ❌   | 题干文本（可含 HTML）                    |
+| `questions[].embedding`       | ❌   | 插件生成的 1536 维题干词向量             |
 | `questions[].options`         | ❌   | 选项列表 `[{id, text}]`                  |
 | `questions[].correct_answers` | ❌   | 正确答案值数组                           |
 | `questions[].wrong_answers`   | ❌   | 已排除的错误答案值数组                   |
@@ -162,6 +164,10 @@
    - 匿名用户不允许覆盖已有正确答案（返回 `denied_anonymous_overwrite`）
 4. 仅提供 `wrong_answers` 时：添加错误答案排除标记
 5. 如果提供了 `stem`/`options` 且题目之前未存储，自动更新
+
+向量处理规则：上传请求带有 `embedding` 时直接使用客户端向量；未带向量时，仅在服务端配置 `EMBEDDING_API_URL` 和 `EMBEDDING_API_KEY` 时调用 embedding 模型。向量必须为 1536 维数字数组。
+
+上面的 JSON 仅展示数组前几项，实际请求必须提供完整的 1536 个数字。
 
 **响应:**
 

@@ -239,6 +239,7 @@ Authorization: Bearer <token> (可选)
         { "id": "A", "text": "连续函数一定可积" },
         { "id": "B", "text": "可积函数一定连续" }
       ],
+      "embedding": [0.0123, 0.0456, 0.0789],
       "correct_answers": ["A"],
       "wrong_answers": null
     },
@@ -262,6 +263,8 @@ Authorization: Bearer <token> (可选)
 > **注意**：
 >
 > - 题干 `stem` 与 `options` 为可选字段。如果交卷时未解析完整题干，仅提供 `question_id`、`type` 与 `correct_answers` / `wrong_answers` 同样有效。
+> - `embedding` 为可选字段，必须是与服务端 `vector(1536)` 兼容的 1536 维数字数组。插件已生成词向量时，建议随题目一并上传；服务端优先使用该向量。
+> - 未提供 `embedding` 时，服务端仅在配置 `EMBEDDING_API_URL` 与 `EMBEDDING_API_KEY` 后才调用模型生成；未配置时不会发起模型请求，继续使用文本匹配回退。
 > - 一旦某题目成功录入 `correct_answers`，服务端会自动清理该题目之前存储的全部错误答案排除记录。
 > - 如果同一道题目已有正确答案，匿名用户上传会被忽略（`denied_anonymous_overwrite`），通过 OAuth 登录的用户则可直接更新覆盖。
 
@@ -379,7 +382,17 @@ async function uploadTaskResults(payload) {
   }
 }
 
-module.exports = { fetchTaskAnswers, uploadTaskResults, ensureApiKey };
+// generateEmbedding 由插件使用自己的词向量模型实现；返回值必须是 1536 维数组。
+async function addEmbeddings(questions, generateEmbedding) {
+  return Promise.all(
+    questions.map(async (question) => ({
+      ...question,
+      embedding: question.stem ? await generateEmbedding(question.stem) : undefined,
+    })),
+  );
+}
+
+module.exports = { fetchTaskAnswers, uploadTaskResults, ensureApiKey, addEmbeddings };
 ```
 
 ### 6.2 在 `utils/quiz.js` 中接入
@@ -387,7 +400,7 @@ module.exports = { fetchTaskAnswers, uploadTaskResults, ensureApiKey };
 在 `processQuizQuestions` 执行前查询题库：
 
 ```javascript
-const { fetchTaskAnswers, uploadTaskResults } = require("./qa-client");
+const { fetchTaskAnswers, uploadTaskResults, addEmbeddings } = require("./qa-client");
 
 // 1. 做题前查询已知答案
 const knownQuestions = await fetchTaskAnswers(tid, courseId);
@@ -424,10 +437,13 @@ if (quizPassed) {
   await uploadTaskResults({
     tid,
     cid: courseId,
-    questions: recordedAnswersList, // 包含通过的组合或从 exam/view 解析的标准答案
+    // pluginEmbedding 是插件选择的词向量生成器；每个返回值必须是 1536 维数组。
+    questions: await addEmbeddings(recordedAnswersList, pluginEmbedding),
   });
 }
 ```
+
+`recordedAnswersList` 中的每道题也可以附带插件生成的 `embedding` 字段。上例中的 JSON 仅展示数组前几项，实际字段必须是 1536 维数字数组；服务端会优先保存并用于语义匹配。
 
 ---
 
