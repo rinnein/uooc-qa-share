@@ -1,18 +1,33 @@
 import { Elysia } from "elysia";
 import { cors } from "@elysiajs/cors";
-import { env } from "@/lib/env";
+import { isOriginAllowed } from "@/lib/cors";
 import { questionsRoutes } from "./questions";
 import { tasksRoutes } from "./tasks";
 import { uploadRoutes } from "./upload";
 import { automationRoutes } from "./automation";
 
-const corsOrigins = env.CORS_ORIGINS.split(",").filter(Boolean);
-
 export const api = new Elysia({ prefix: "/api" })
   .use(
     cors({
-      origin: corsOrigins.length > 0 ? corsOrigins : true,
+      origin: (request) => isOriginAllowed(request.headers.get("origin") ?? ""),
       credentials: true,
+      allowedHeaders: [
+        "Content-Type",
+        "Authorization",
+        "x-api-key",
+        "api-key",
+        "x-session-id",
+        "mcp-protocol-version",
+        "*",
+      ],
+      exposeHeaders: [
+        "Set-Cookie",
+        "x-api-key",
+        "Authorization",
+        "x-session-id",
+        "mcp-protocol-version",
+        "WWW-Authenticate",
+      ],
     }),
   )
   .use(questionsRoutes)

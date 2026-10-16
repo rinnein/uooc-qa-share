@@ -8,6 +8,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import * as schema from "@/db/schema";
 import { env } from "@/lib/env";
+import { getTrustedOriginsList, isOriginAllowed } from "@/lib/cors";
 
 export const auth = betterAuth({
   baseURL: env.BETTER_AUTH_URL,
@@ -19,7 +20,16 @@ export const auth = betterAuth({
     expiresIn: 60 * 60 * 24 * 31, // 31 days
     updateAge: 60 * 60 * 24, // 1 day
   },
-  trustedOrigins: env.CORS_ORIGINS.split(",").filter(Boolean),
+  trustedOrigins: (request) => {
+    const list = getTrustedOriginsList();
+    if (request) {
+      const origin = request.headers.get("origin");
+      if (origin && isOriginAllowed(origin) && !list.includes(origin)) {
+        list.push(origin);
+      }
+    }
+    return list;
+  },
   socialProviders: {
     github: {
       clientId: env.GITHUB_CLIENT_ID ?? "",

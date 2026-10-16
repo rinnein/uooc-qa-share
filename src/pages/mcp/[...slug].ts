@@ -1,25 +1,11 @@
 import { createMcpServer } from "@/mcp/server";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { auth } from "@/lib/auth";
+import { applyCorsHeaders, handleCorsPreflight } from "@/lib/cors";
 import type { APIRoute } from "astro";
 
-function withCors(response: Response): Response {
-  const headers = new Headers(response.headers);
-  headers.set("Access-Control-Allow-Origin", "*");
-  headers.set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
-  headers.set(
-    "Access-Control-Allow-Headers",
-    "Content-Type, Authorization, x-api-key, api-key, x-session-id, mcp-protocol-version, *",
-  );
-  headers.set(
-    "Access-Control-Expose-Headers",
-    "x-session-id, mcp-protocol-version, WWW-Authenticate",
-  );
-  return new Response(response.body, {
-    status: response.status,
-    statusText: response.statusText,
-    headers,
-  });
+function withCors(request: Request, response: Response): Response {
+  return applyCorsHeaders(request, response);
 }
 
 /**
@@ -79,17 +65,8 @@ async function resolveAgentUser(request: Request) {
   return null;
 }
 
-export const OPTIONS: APIRoute = async () => {
-  return new Response(null, {
-    status: 204,
-    headers: {
-      "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
-      "Access-Control-Allow-Headers":
-        "Content-Type, Authorization, x-api-key, api-key, x-session-id, mcp-protocol-version, *",
-      "Access-Control-Expose-Headers": "x-session-id, mcp-protocol-version, WWW-Authenticate",
-    },
-  });
+export const OPTIONS: APIRoute = async ({ request }) => {
+  return handleCorsPreflight(request);
 };
 
 export const POST: APIRoute = async ({ request }) => {
@@ -111,7 +88,7 @@ export const POST: APIRoute = async ({ request }) => {
         }
       : undefined,
   });
-  return withCors(res);
+  return withCors(request, res);
 };
 
 export const GET: APIRoute = async ({ request }) => {
@@ -132,10 +109,11 @@ export const GET: APIRoute = async ({ request }) => {
           }
         : undefined,
     });
-    return withCors(res);
+    return withCors(request, res);
   }
 
   return withCors(
+    request,
     new Response(
       JSON.stringify({
         name: "uooc-qa-share",
@@ -167,5 +145,5 @@ export const DELETE: APIRoute = async ({ request }) => {
   });
   await server.connect(transport);
   const res = await transport.handleRequest(request);
-  return withCors(res);
+  return withCors(request, res);
 };

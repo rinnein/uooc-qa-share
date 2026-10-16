@@ -1,7 +1,16 @@
 import { auth } from "@/lib/auth";
+import { applyCorsHeaders, handleCorsPreflight, isCorsPath } from "@/lib/cors";
 import { defineMiddleware } from "astro:middleware";
 
 export const onRequest = defineMiddleware(async (context, next) => {
+  // Handle CORS preflight requests
+  if (
+    context.request.method === "OPTIONS" &&
+    (isCorsPath(context.url.pathname) || Boolean(context.request.headers.get("origin")))
+  ) {
+    return handleCorsPreflight(context.request);
+  }
+
   const urlApiKey =
     context.url.searchParams.get("apiKey") || context.url.searchParams.get("api_key");
 
@@ -20,9 +29,12 @@ export const onRequest = defineMiddleware(async (context, next) => {
     requestHeaders.set("x-api-key", targetApiKey);
   }
 
-  let session = await auth.api.getSession({
-    headers: requestHeaders,
-  });
+  let session = null;
+  try {
+    session = await auth.api.getSession({
+      headers: requestHeaders,
+    });
+  } catch {}
 
   // Fallback: direct verifyApiKey if getSession did not resolve it
   if (!session && targetApiKey) {
@@ -67,19 +79,28 @@ export const onRequest = defineMiddleware(async (context, next) => {
 
   const response = await next();
 
+  let finalResponse = response;
+
   // If apiKey was injected via URL parameter, persist it to cookie for subsequent webview navigations
-  if (urlApiKey && response) {
-    const headers = new Headers(response.headers);
+  if (urlApiKey && finalResponse) {
+    const headers = new Headers(finalResponse.headers);
     headers.append(
       "Set-Cookie",
       `apiKey=${encodeURIComponent(urlApiKey)}; Path=/; Max-Age=2678400; SameSite=Lax`,
     );
-    return new Response(response.body, {
-      status: response.status,
-      statusText: response.statusText,
+    finalResponse = new Response(finalResponse.body, {
+      status: finalResponse.status,
+      statusText: finalResponse.statusText,
       headers,
     });
   }
 
-  return response;
+  if (
+    finalResponse &&
+    (isCorsPath(context.url.pathname) || Boolean(context.request.headers.get("origin")))
+  ) {
+    return applyCorsHeaders(context.request, finalResponse);
+  }
+
+  return finalResponse;
 });

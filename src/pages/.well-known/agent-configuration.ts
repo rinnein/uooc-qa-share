@@ -1,12 +1,17 @@
 import { auth } from "../../lib/auth";
+import { applyCorsHeaders, handleCorsPreflight } from "../../lib/cors";
 import type { APIRoute } from "astro";
 
-export const GET: APIRoute = async () => {
+export const GET: APIRoute = async ({ request }) => {
   const configuration = await auth.api.getAgentConfiguration();
-  return new Response(JSON.stringify(configuration), {
+  const res = new Response(JSON.stringify(configuration), {
     headers: {
       "Content-Type": "application/json",
-      "Access-Control-Allow-Origin": "*",
     },
   });
+  return applyCorsHeaders(request, res);
+};
+
+export const OPTIONS: APIRoute = async ({ request }) => {
+  return handleCorsPreflight(request);
 };

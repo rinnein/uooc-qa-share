@@ -1,4 +1,5 @@
 import { auth } from "@/lib/auth";
+import { applyCorsHeaders, handleCorsPreflight } from "@/lib/cors";
 import type { APIRoute } from "astro";
 
 export const POST: APIRoute = async ({ request }) => {
@@ -9,10 +10,14 @@ export const POST: APIRoute = async ({ request }) => {
     });
 
     if (!signinResult?.user) {
-      return new Response(JSON.stringify({ ok: false, error: "Failed to sign in anonymously" }), {
-        status: 500,
-        headers: { "Content-Type": "application/json" },
-      });
+      const errorRes = new Response(
+        JSON.stringify({ ok: false, error: "Failed to sign in anonymously" }),
+        {
+          status: 500,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+      return applyCorsHeaders(request, errorRes);
     }
 
     const user = signinResult.user;
@@ -32,7 +37,6 @@ export const POST: APIRoute = async ({ request }) => {
 
     const headers = new Headers({
       "Content-Type": "application/json",
-      "Access-Control-Allow-Origin": "*",
     });
 
     if (apiKey) {
@@ -43,7 +47,7 @@ export const POST: APIRoute = async ({ request }) => {
       );
     }
 
-    return new Response(
+    const res = new Response(
       JSON.stringify({
         ok: true,
         user,
@@ -53,26 +57,21 @@ export const POST: APIRoute = async ({ request }) => {
       }),
       { status: 200, headers },
     );
+    return applyCorsHeaders(request, res);
   } catch (error) {
-    return new Response(
+    const errorRes = new Response(
       JSON.stringify({
         ok: false,
         error: error instanceof Error ? error.message : String(error),
       }),
       { status: 500, headers: { "Content-Type": "application/json" } },
     );
+    return applyCorsHeaders(request, errorRes);
   }
 };
 
 export const GET: APIRoute = POST;
 
-export const OPTIONS: APIRoute = async () => {
-  return new Response(null, {
-    status: 204,
-    headers: {
-      "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type, Authorization, x-api-key, *",
-    },
-  });
+export const OPTIONS: APIRoute = async ({ request }) => {
+  return handleCorsPreflight(request);
 };
