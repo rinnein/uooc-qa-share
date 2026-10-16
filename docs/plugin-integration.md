@@ -212,6 +212,26 @@ GET /api/courses/{cid}/tasks/{tid}
    - **Case C (完全无数据)**：
      按原插件逻辑执行（AI 识图答题或人工填写）。
 
+### 3.4 单题语义检索与本地向量加速
+
+当题组内按 `question_id` 未直接命中时，插件可通过全局题库语义搜索接口 `/api/questions/search` 查找跨题组或往年同源题。
+
+若插件本地运行小模型或具备向量计算能力，**强烈建议直接在 `POST /api/questions/search` 请求体中附带 1536 维向量**：
+
+```http
+POST /api/questions/search
+Content-Type: application/json
+
+{
+  "q": "题干文本内容...",
+  "embedding": [0.0123, 0.0456, "... (共1536维浮点数)"],
+  "limit": 5
+}
+```
+
+- **零服务端模型开销**：服务端检测到已提供符合要求的 1536 维向量后，直接调用 pgvector 执行余弦相似度计算，**完全跳过服务端 embedding 模型生成**，响应通常在 10ms~30ms 内完成。
+- **自动降级支持**：若未附带 `embedding`，服务端在配置有 Embedding API 时会自动生成向量，未配置时自动降级为 ILIKE 模糊文本检索。
+
 ---
 
 ## 4. 答题后数据回传流程

@@ -3,7 +3,59 @@ import { db } from "@/db";
 import { questions, answers } from "@/db/schema";
 import { eq, and, sql } from "drizzle-orm";
 import { hashStem } from "@/lib/stem";
-import { generateEmbedding } from "@/lib/embedding";
+import { EMBEDDING_DIMENSIONS, generateEmbedding } from "@/lib/embedding";
+
+export async function searchQuestionsInternal(options: {
+  q?: string;
+  exact?: string | boolean;
+  embedding?: number[];
+  limit?: number;
+}) {
+  const q = options.q?.trim();
+  const exact = options.exact === "1" || options.exact === true;
+  const limit = options.limit && options.limit > 0 ? Math.min(options.limit, 50) : 50;
+
+  // 1. If exact mode and q is provided, search by stem_hash
+  if (exact && q) {
+    const hash = hashStem(q);
+    const results = await db.query.questions.findMany({
+      where: eq(questions.stemHash, hash),
+      limit,
+    });
+    return { results };
+  }
+
+  // 2. Vector search: prefer client-provided vector if valid; otherwise generate server-side if q is provided
+  let embedding: number[] | null = null;
+  if (options.embedding && options.embedding.length === EMBEDDING_DIMENSIONS) {
+    embedding = options.embedding;
+  } else if (q) {
+    embedding = await generateEmbedding(q);
+  }
+
+  if (embedding) {
+    const vectorStr = `[${embedding.join(",")}]`;
+    const results = await db.execute(sql`
+      SELECT q.*, 1 - (q.stem_embedding <=> ${vectorStr}::vector) AS similarity
+      FROM questions q
+      WHERE q.stem_embedding IS NOT NULL
+      ORDER BY q.stem_embedding <=> ${vectorStr}::vector
+      LIMIT ${Math.min(limit, 20)}
+    `);
+    return { results };
+  }
+
+  // 3. Fallback: ILIKE search on stem text
+  if (q) {
+    const results = await db.query.questions.findMany({
+      where: sql`${questions.stem} ILIKE ${"%" + q + "%"}`,
+      limit,
+    });
+    return { results };
+  }
+
+  return { results: [] };
+}
 
 export const questionsRoutes = new Elysia({ prefix: "/questions" })
   // Get single question by internal ID or UOOC question_id
@@ -91,48 +143,60 @@ export const questionsRoutes = new Elysia({ prefix: "/questions" })
     { params: t.Object({ id: t.String() }) },
   )
 
-  // Search questions by stem text
+  // Search questions by stem text or precomputed vector (GET)
   .get(
     "/search",
     async ({ query }) => {
-      const q = query.q?.trim();
-      if (!q) return { results: [] };
-
-      // If exact mode, search by stem_hash
-      if (query.exact === "1") {
-        const hash = hashStem(q);
-        const results = await db.query.questions.findMany({
-          where: eq(questions.stemHash, hash),
-          limit: 50,
-        });
-        return { results };
+      let embedding: number[] | undefined;
+      if (query.embedding) {
+        try {
+          const parsed = JSON.parse(query.embedding);
+          if (Array.isArray(parsed) && parsed.length === EMBEDDING_DIMENSIONS) {
+            embedding = parsed;
+          }
+        } catch {}
       }
 
-      // Try vector search if embedding is configured
-      const embedding = await generateEmbedding(q);
-      if (embedding) {
-        const vectorStr = `[${embedding.join(",")}]`;
-        const results = await db.execute(sql`
-          SELECT q.*, 1 - (q.stem_embedding <=> ${vectorStr}::vector) AS similarity
-          FROM questions q
-          WHERE q.stem_embedding IS NOT NULL
-          ORDER BY q.stem_embedding <=> ${vectorStr}::vector
-          LIMIT 20
-        `);
-        return { results };
-      }
-
-      // Fallback: ILIKE search on stem text
-      const results = await db.query.questions.findMany({
-        where: sql`${questions.stem} ILIKE ${"%" + q + "%"}`,
-        limit: 50,
+      const limit = query.limit ? Number.parseInt(query.limit, 10) : undefined;
+      return searchQuestionsInternal({
+        q: query.q,
+        exact: query.exact,
+        embedding,
+        limit: Number.isNaN(limit) ? undefined : limit,
       });
-      return { results };
     },
     {
       query: t.Object({
         q: t.Optional(t.String()),
         exact: t.Optional(t.String()),
+        embedding: t.Optional(t.String()),
+        limit: t.Optional(t.String()),
+      }),
+    },
+  )
+
+  // Search questions by stem text or precomputed vector (POST)
+  .post(
+    "/search",
+    async ({ body }) => {
+      return searchQuestionsInternal({
+        q: body.q,
+        exact: body.exact,
+        embedding: body.embedding,
+        limit: body.limit,
+      });
+    },
+    {
+      body: t.Object({
+        q: t.Optional(t.String()),
+        exact: t.Optional(t.Union([t.String(), t.Boolean()])),
+        embedding: t.Optional(
+          t.Array(t.Number(), {
+            minItems: EMBEDDING_DIMENSIONS,
+            maxItems: EMBEDDING_DIMENSIONS,
+          }),
+        ),
+        limit: t.Optional(t.Number()),
       }),
     },
   );

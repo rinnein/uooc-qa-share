@@ -82,23 +82,36 @@ JSON 格式规范：
     }),
   );
 
-  // Search questions by stem text
+  // Search questions by stem text or precomputed vector
   server.tool(
     "search_questions",
-    "按题干内容搜索题目。返回匹配的题目及其答案。",
-    { query: z.string().describe("搜索关键词") },
-    async ({ query }) => {
-      const embedding = await generateEmbedding(query);
-      let results;
-      if (embedding) {
-        const vectorStr = `[${embedding.join(",")}]`;
+    "按题干内容或向量搜索题目。若传入符合要求的 1536 维向量，直接进行向量比对而无需在服务端生成向量。返回匹配的题目及其答案。",
+    {
+      query: z.string().optional().describe("搜索关键词或题干文本"),
+      embedding: z
+        .array(z.number())
+        .length(1536)
+        .optional()
+        .describe(
+          "可选的本地预先计算好的 1536 维词向量，传入时将直接使用该向量进行相似度检索，跳过服务端向量生成",
+        ),
+    },
+    async ({ query, embedding }) => {
+      let finalEmbedding = embedding && embedding.length === 1536 ? embedding : null;
+      if (!finalEmbedding && query) {
+        finalEmbedding = await generateEmbedding(query);
+      }
+
+      let results: unknown[] = [];
+      if (finalEmbedding) {
+        const vectorStr = `[${finalEmbedding.join(",")}]`;
         const rows = await db.execute(sql`
           SELECT q.*, 1 - (q.stem_embedding <=> ${vectorStr}::vector) AS similarity
           FROM questions q WHERE q.stem_embedding IS NOT NULL
           ORDER BY q.stem_embedding <=> ${vectorStr}::vector LIMIT 10
         `);
         results = rows;
-      } else {
+      } else if (query) {
         results = await db.query.questions.findMany({
           where: sql`${questions.stem} ILIKE ${"%" + query + "%"}`,
           limit: 10,
