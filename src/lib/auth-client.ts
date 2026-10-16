@@ -1,5 +1,5 @@
 import { createAuthClient } from "better-auth/react";
-import { anonymousClient } from "better-auth/client/plugins";
+import { anonymousClient, deviceAuthorizationClient } from "better-auth/client/plugins";
 import { apiKeyClient } from "@better-auth/api-key/client";
 
 function getStoredApiKey(): string {
@@ -12,7 +12,7 @@ function getStoredApiKey(): string {
 }
 
 export const authClient = createAuthClient({
-  plugins: [anonymousClient(), apiKeyClient()],
+  plugins: [anonymousClient(), apiKeyClient(), deviceAuthorizationClient()],
   fetchOptions: {
     auth: {
       type: "Bearer",

@@ -26,9 +26,9 @@ pnpm dev
 
 ## 文档
 
-- [API 参考](./api-reference.md) — 完整的 REST API 文档（含自动任务补全、API Key、Webview 注入与鉴权模型）
-- [插件接入指南](./plugin-integration.md) — fuckuooc、your-szu-life 等插件的完整接入指南（含 OAuth 预登录、静默匿名申请、账号绑定升级与空闲题库巡检/任务认领）
-- [MCP 协议接入指南](./mcp-integration.md) — MCP 协议与 Agent Auth 接入说明（Claude Desktop、Cursor 配置、8 个核心工具及本地试题清洗入库）
+- [API 参考](./api-reference.md) — 完整的 REST API 文档（含自动任务补全、RFC 8628 设备授权、API Key、Webview 注入与鉴权模型）
+- [插件接入指南](./plugin-integration.md) — fuckuooc、your-szu-life 等插件的完整接入指南（含无回调地址设备认证、OAuth 预登录、静默匿名申请、账号绑定升级与空闲题库巡检/任务认领）
+- [MCP 协议接入指南](./mcp-integration.md) — MCP 协议与 Agent Auth 接入说明（Claude Desktop、Cursor 配置、8 个核心工具、设备流交互及本地试题清洗入库）
 - [数据模型](./data-model.md) — 数据库结构、三级去重匹配策略、答案状态机与自动任务模型约定
 
 ## 技术栈
@@ -36,5 +36,5 @@ pnpm dev
 - **前端**: Astro + React + shadcn/ui + Tailwind CSS
 - **后端**: ElysiaJS (运行在 Astro SSR 内)
 - **数据库**: PostgreSQL + Drizzle ORM + pgvector
-- **认证**: better-auth (GitHub OAuth / bili-sign OAuth / 匿名)
+- **认证**: better-auth (GitHub OAuth / bili-sign OAuth / RFC 8628 设备授权 / 匿名)
 - **MCP**: Streamable HTTP 传输协议

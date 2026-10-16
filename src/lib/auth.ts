@@ -1,6 +1,6 @@
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "@better-auth/drizzle-adapter";
-import { jwt, anonymous, bearer, genericOAuth } from "better-auth/plugins";
+import { jwt, anonymous, bearer, genericOAuth, deviceAuthorization } from "better-auth/plugins";
 import { apiKey } from "@better-auth/api-key";
 import { agentAuth } from "@better-auth/agent-auth";
 import { mcp } from "@better-auth/mcp";
@@ -58,7 +58,7 @@ export const auth = betterAuth({
         const authHeader = ctx.headers?.get("authorization");
         if (authHeader?.startsWith("Bearer ")) {
           const token = authHeader.slice(7).trim();
-          if (token.startsWith("uooc_") || token.length >= 32) return token;
+          if (token.startsWith("uooc_")) return token;
         }
 
         const cookieHeader = ctx.headers?.get("cookie") || "";
@@ -71,6 +71,7 @@ export const auth = betterAuth({
     agentAuth({
       providerName: "UOOC QA Share",
       providerDescription: "UOOC QA sharing platform for AI agents",
+      deviceAuthorizationPage: "/device",
       modes: ["delegated", "autonomous"],
       resolveAutonomousUser: async ({ agentId, agentMode }) => {
         return {
@@ -205,6 +206,10 @@ export const auth = betterAuth({
           },
         },
       ],
+    }),
+    deviceAuthorization({
+      verificationUri: "/device",
+      validateClient: () => true,
     }),
     mcp({
       loginPage: "/login",

@@ -18,6 +18,7 @@ export default function McpGuideView() {
 
   const mcpUrl = `${origin}/mcp`;
   const discoveryUrl = `${origin}/.well-known/agent-configuration`;
+  const deviceUrl = `${origin}/device`;
 
   const claudeDesktopConfig = JSON.stringify(
     {
@@ -64,7 +65,7 @@ export default function McpGuideView() {
       </div>
 
       {/* Endpoint Cards */}
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid gap-4 sm:grid-cols-3">
         <div className="rounded-xl border p-4 bg-card space-y-2">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
@@ -104,6 +105,27 @@ export default function McpGuideView() {
           </code>
           <p className="text-xs text-muted-foreground">
             遵循 Agent Auth 协议规范，供智能体自主发现端点与 Capabilities。
+          </p>
+        </div>
+
+        <div className="rounded-xl border p-4 bg-card space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+              Device Auth (无回调)
+            </span>
+            <button
+              type="button"
+              onClick={() => copyText("deviceUrl", deviceUrl)}
+              className="text-xs rounded border px-2 py-0.5 hover:bg-accent transition-colors"
+            >
+              {copiedKey === "deviceUrl" ? "已复制 ✓" : "复制 URL"}
+            </button>
+          </div>
+          <code className="text-sm font-mono block p-2 rounded bg-muted/50 break-all text-foreground/80">
+            {deviceUrl}
+          </code>
+          <p className="text-xs text-muted-foreground">
+            RFC 8628 设备授权流，供插件与外部 Agent 在无回调地址时完成认证。
           </p>
         </div>
       </div>
@@ -163,6 +185,55 @@ export default function McpGuideView() {
                 (用于绑定特定账号)
               </li>
             </ul>
+          </div>
+
+          {/* Plugin & Agent Device Authorization Flow */}
+          <div className="rounded-lg border p-4 space-y-3 bg-muted/10">
+            <div>
+              <h3 className="font-semibold text-sm">
+                3. 浏览器插件 / 油猴脚本 / 外部 Agent（无回调地址认证）
+              </h3>
+              <p className="text-xs text-muted-foreground">
+                基于 RFC 8628 Device Authorization
+                标准规范。在无法配置固定重定向回调地址的环境（如油猴插件、扩展程序或本地 Agent
+                环境）下，直接通过设备码完成认证与账号授权绑定。
+              </p>
+            </div>
+            <div className="space-y-2">
+              <p className="text-xs text-muted-foreground font-semibold">标准接入流程代码示例：</p>
+              <pre className="p-3 rounded-md bg-muted/60 font-mono text-xs overflow-auto">
+                {`// 1. 请求设备授权码
+const codeRes = await fetch("${origin}/api/auth/device/code", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ client_id: "uooc-browser-plugin" }),
+});
+const { device_code, user_code, verification_uri_complete, interval } = await codeRes.json();
+
+// 2. 引导用户打开授权页面（或提示访问 /device 输入 user_code）
+window.open(verification_uri_complete, "_blank");
+
+// 3. 轮询获取 Session Access Token
+const timer = setInterval(async () => {
+  const tokenRes = await fetch("${origin}/api/auth/device/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      grant_type: "urn:ietf:params:oauth:grant-type:device_code",
+      device_code,
+      client_id: "uooc-browser-plugin",
+    }),
+  });
+
+  if (tokenRes.ok) {
+    clearInterval(timer);
+    const { access_token } = await tokenRes.json();
+    // 保存 access_token，后续通过请求头携带：Authorization: Bearer \${access_token}
+    console.log("认证成功！Token:", access_token);
+  }
+}, (interval || 5) * 1000);`}
+              </pre>
+            </div>
           </div>
         </div>
       </div>

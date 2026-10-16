@@ -83,6 +83,23 @@
 | `created_at`   | `timestamp` | NOT NULL                       | 创建时间                                                   |
 | `updated_at`   | `timestamp` | NOT NULL                       | 更新时间                                                   |
 
+### 2.5 设备授权码表 (`device_code`)
+
+用于支持 RFC 8628 设备授权流，供无回调地址的浏览器扩展、插件或外部 Agent 换取 Session Bearer Token：
+
+| 字段               | 类型        | 约束                      | 说明                                    |
+| ------------------ | ----------- | ------------------------- | --------------------------------------- |
+| `id`               | `text`      | PRIMARY KEY               | 设备授权记录 ID                         |
+| `device_code`      | `text`      | NOT NULL, UNIQUE, INDEX   | 客户端保密的设备码                      |
+| `user_code`        | `text`      | NOT NULL, UNIQUE, INDEX   | 供用户在 `/device` 页面填写的简短用户码 |
+| `user_id`          | `text`      | NULLABLE, FK → `user(id)` | 授权用户的 ID（核验/认领后绑定）        |
+| `status`           | `text`      | NOT NULL                  | 状态：`pending` / `approved` / `denied` |
+| `expires_at`       | `timestamp` | NOT NULL                  | 设备码过期时间（默认 30 分钟）          |
+| `last_polled_at`   | `timestamp` | NULLABLE                  | 客户端上次轮询时间（用于频率控制限速）  |
+| `polling_interval` | `integer`   | NULLABLE                  | 客户端轮询间隔（毫秒）                  |
+| `client_id`        | `text`      | NULLABLE                  | 申请授权的客户端标识符                  |
+| `scope`            | `text`      | NULLABLE                  | 申请的权限范围                          |
+
 ---
 
 ## 3. 题目匹配与去重三级策略 (Matching Hierarchy)

@@ -9,7 +9,8 @@ UOOC QA Share 平台内置了基于 Streamable HTTP 协议的高性能 MCP（Mod
 - **MCP 访问地址**：`http://localhost:4321/mcp`（生产环境替换为实际部署域名）
 - **通信协议**：MCP Streamable HTTP Transport（支持标准 POST JSON-RPC 消息与 GET SSE 事件流）
 - **认证机制**：
-  - **Agent Auth 协议**：服务发布 Agent 发现配置于 `/.well-known/agent-configuration`，Agent 可通过临时短期签署的 JWT 进行鉴权，平台自动授予临时匿名/自主用户态。
+  - **Agent Auth 协议**：服务发布 Agent 发现配置于 `/.well-known/agent-configuration`，Agent 可通过临时短期签署的 JWT 进行鉴权，平台自动授予临时匿名/自主用户态；需要申请权限时统一引导至 `/device` 页面核验与批准。
+  - **RFC 8628 设备授权流 (无回调地址认证)**：外部 Agent、无头 CLI 客户端或 MCP 宿主若无需配置回调地址，可直接通过 `POST /api/auth/device/code` 请求设备码，引导用户访问 `/device` 完成账号授权，并在轮询获得 `access_token` 后以 `Authorization: Bearer <access_token>` 访问。
   - **MCP OAuth 2.1 规范**：支持 RFC 9728 `/.well-known/oauth-protected-resource` 元数据发现。
   - **API Key 快捷鉴权**：在请求头附加 `x-api-key: uooc_...`，平台即可挂载对应的用户状态。
 - **跨域支持**：默认开启全域 CORS（`Access-Control-Allow-Origin: *`），允许跨域 Web 应用、浏览器扩展及本地桌面客户端直接连接。

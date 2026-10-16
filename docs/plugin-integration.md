@@ -63,14 +63,14 @@
 
 平台对不同身份提供差异化的答案管控策略：
 
-| 身份类型           | 凭证来源                                             | 读权限 (查题/剪枝) | 新题写入 | 历史答案覆盖/修改                                          |
-| ------------------ | ---------------------------------------------------- | ------------------ | -------- | ---------------------------------------------------------- |
-| **OAuth 认证用户** | 用户在插件内点击登录完成 OAuth（GitHub / bili-sign） | ✅ 允许            | ✅ 允许  | ✅ **允许**（发现错误时可直接纠正旧答案）                  |
-| **匿名账号用户**   | 插件未配置时自动通过 Auth API 申请的专属账号         | ✅ 允许            | ✅ 允许  | ❌ **拒绝**（防刷机制，返回 `denied_anonymous_overwrite`） |
+| 身份类型                      | 凭证来源                                                                    | 读权限 (查题/剪枝) | 新题写入 | 历史答案覆盖/修改                                          |
+| ----------------------------- | --------------------------------------------------------------------------- | ------------------ | -------- | ---------------------------------------------------------- |
+| **认证用户 (OAuth / Device)** | 用户在插件内点击登录完成 OAuth 或通过 RFC 8628 设备授权流绑定的正式用户账号 | ✅ 允许            | ✅ 允许  | ✅ **允许**（发现错误时可直接纠正旧答案）                  |
+| **匿名账号用户**              | 插件未配置时自动通过 Auth API 申请的专属账号                                | ✅ 允许            | ✅ 允许  | ❌ **拒绝**（防刷机制，返回 `denied_anonymous_overwrite`） |
 
 ---
 
-### 2.2 方案一：在设置中通过 OAuth 预先登录（推荐正式用户）
+### 2.2 方案一：在设置中通过 OAuth 预先登录（适用于具备本地重定向或 Webview 的客户端）
 
 若插件支持用户交互界面（如桌面客户端 `your-szu-life` 或命令行引导）：
 
@@ -83,7 +83,99 @@
 
 ---
 
-### 2.3 方案二：未提前登录时的优雅降级（自动申请匿名账号）
+### 2.3 方案二：无回调地址认证（RFC 8628 设备授权流，强烈推荐油猴脚本 / 浏览器插件 / CLI）
+
+油猴脚本（Tampermonkey/Violentmonkey）、浏览器扩展程序（Chrome/Firefox Extension）、无 Webview 的终端工具或自动化 Agent 常常**无法配置固定重定向回调地址 (Callback URL)**。
+
+平台原生集成了 **RFC 8628 OAuth 2.0 Device Authorization Grant**。插件只需通过标准 HTTP 请求即可完成账号认证：
+
+```
+┌────────────────────┐                   ┌────────────────────┐                   ┌────────────────────┐
+│   插件 (Plugin)    │                   │   UOOC QA 认证端点  │                   │   用户浏览器操作   │
+└─────────┬──────────┘                   └─────────┬──────────┘                   └─────────┬──────────┘
+          │                                        │                                        │
+          │ 1. POST /api/auth/device/code          │                                        │
+          │───────────────────────────────────────►│                                        │
+          │                                        │                                        │
+          │ 2. 返回 device_code, user_code, url    │                                        │
+          │◄───────────────────────────────────────│                                        │
+          │                                        │                                        │
+          │ 3. 打开 verification_uri_complete ─────┼───────────────────────────────────────►│
+          │                                        │                                        │ 4. 浏览器打开 /device
+          │                                        │                                        │    核对信息并点击「批准」
+          │                                        │   5. POST /api/auth/device/approve     │
+          │                                        │◄───────────────────────────────────────│
+          │                                        │                                        │
+          │ 6. 轮询 POST /api/auth/device/token    │                                        │
+          │───────────────────────────────────────►│                                        │
+          │                                        │                                        │
+          │ 7. 返回 access_token (Bearer Session)  │                                        │
+          │◄───────────────────────────────────────│                                        │
+```
+
+#### 完整集成步骤：
+
+1. **发起设备码申请**：插件向服务端申请设备码与用户码：
+
+   ```http
+   POST /api/auth/device/code
+   Content-Type: application/json
+
+   {
+     "client_id": "uooc-browser-plugin"
+   }
+   ```
+
+   响应返回：
+
+   ```json
+   {
+     "device_code": "d_123456789...",
+     "user_code": "ABCD-1234",
+     "verification_uri": "http://your-qa-server.com/device",
+     "verification_uri_complete": "http://your-qa-server.com/device?user_code=ABCD-1234",
+     "expires_in": 1800,
+     "interval": 5
+   }
+   ```
+
+2. **引导用户授权**：
+   - 网页/油猴插件中：直接调用 `window.open(verification_uri_complete, "_blank")` 打开授权页。
+   - CLI 终端中：终端打印 `请在浏览器中打开: http://your-qa-server.com/device 并输入验证码: ABCD-1234`。
+   - 用户在页面上若已登录直接点击「批准授权」；若未登录则先行登录后自动进入确认。
+
+3. **轮询换取 Access Token**：插件按返回的 `interval`（通常 5 秒）周期轮询 Token 端点：
+
+   ```http
+   POST /api/auth/device/token
+   Content-Type: application/json
+
+   {
+     "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
+     "device_code": "d_123456789...",
+     "client_id": "uooc-browser-plugin"
+   }
+   ```
+   - 若用户尚未批准，返回 400 `{ "error": "authorization_pending" }`，插件等待下一个周期重试；
+   - 用户在网页点击批准后，该接口返回 200 并下发持久 Session Bearer Token：
+     ```json
+     {
+       "access_token": "s_session_token_xyz...",
+       "token_type": "Bearer",
+       "expires_in": 2678400,
+       "scope": ""
+     }
+     ```
+
+4. **存储与调用**：插件将 `access_token` 保存至本地存储（如 `GM_setValue` 或 localStorage）。后续发起业务请求（如 `/api/upload/batch`、`/api/automation/tasks`）时，只需在请求头带上：
+   ```http
+   Authorization: Bearer s_session_token_xyz...
+   ```
+   即可享用完整的已认证权限，直接覆盖更新试题答案。
+
+---
+
+### 2.4 方案三：未提前登录时的优雅降级（自动申请匿名账号）
 
 如果用户在使用相关功能前**未**在设置内配置或登录，插件切勿弹窗阻断答题流程，而应自动静默降级为匿名账户：
 
@@ -110,7 +202,7 @@
 
 ---
 
-### 2.4 账号绑定、合并与升级机制（在账户面板操作）
+### 2.5 账号绑定、合并与升级机制（在账户面板操作）
 
 即使用户初始使用了自动下发的匿名账号，未来也可以在 UOOC 账户面板或题库平台的个人中心随时完成绑定与升级，历史数据绝不丢失：
 
@@ -132,7 +224,7 @@
 
 ---
 
-### 2.5 客户端软件内部 Webview 免密集成
+### 2.6 客户端软件内部 Webview 免密集成
 
 对于如 `your-szu-life` 等拥有独立桌面/手机客户端的插件，若希望在客户端内部以 Webview 展示题库前端界面：
 

@@ -9,6 +9,9 @@
 - **Webview 免密注入**: 软件型插件（如 Tauri / Electron 应用）内部 Webview 可直接通过 URL 携带 `?apiKey=...`、或在页面加载前注入 `window.__UOOC_API_KEY__` 或设置 Cookie `apiKey`，平台自动完成免密登录并持久化。
 - **自动匿名注册与下发 API Key**:
   - `POST /api/auth/anonymous-key`：插件调用的专用 Auth API，自动完成基于 Better Auth Anonymous 插件的匿名注册并下发持久 `apiKey`。业务上传接口（如 `/api/upload/batch`）不负责写 Auth 数据库，插件应先通过该 Auth 接口或登录获取凭据。
+- **RFC 8628 设备授权流 (无回调地址认证)**:
+  - 专门解决油猴脚本、浏览器扩展程序、无 GUI 的 CLI 终端或外部 Agent **无法配置固定重定向回调地址 (Callback URL)** 的痛点。
+  - 客户端通过 `POST /api/auth/device/code` 请求设备码 (`device_code`) 与用户码 (`user_code`)，引导用户在浏览器打开 `/device?user_code=...` 页面完成授权，随后轮询 `POST /api/auth/device/token` 获取正式 Session Bearer Token。
 - **OAuth 认证与账号绑定/升级**:
   - 用户可在插件或平台设置中通过 OAuth（GitHub 或 bili-sign.rinne.in）进行主账号登录并生成具有完整修改权限的 API Key。
   - 对于初始使用匿名账号的插件/用户，支持在账户面板调用 `linkSocial` 将匿名账户与 OAuth 绑定（作为主账号或合并至已有 OAuth 账号），原匿名用户名下的所有历史提交试题与 API Key 均会自动迁移，永久保留并解锁覆盖更新权限。
@@ -437,6 +440,135 @@
 
 ---
 
+## 设备授权流端点 (RFC 8628 Device Authorization)
+
+适用于无固定公网回调地址或本地重定向端口的浏览器扩展、油猴插件、CLI 终端或 Agent 客户端。
+
+### 1. POST /api/auth/device/code
+
+请求设备码与用户码。客户端无需预先注册 OAuth Client 或配置回调 URL。
+
+**请求体:**
+
+```json
+{
+  "client_id": "uooc-browser-plugin",
+  "scope": "read write"
+}
+```
+
+**响应:**
+
+```json
+{
+  "device_code": "d_random_device_code_string...",
+  "user_code": "ABCD-1234",
+  "verification_uri": "http://localhost:4321/device",
+  "verification_uri_complete": "http://localhost:4321/device?user_code=ABCD-1234",
+  "expires_in": 1800,
+  "interval": 5
+}
+```
+
+- `device_code`: 客户端保密的设备凭证，后续用于轮询换取 Access Token。
+- `user_code`: 供用户在 `/device` 页面核验或输入的简短验证码。
+- `verification_uri_complete`: 预填了用户码的完整授权 URL，客户端可直接调用浏览器打开。
+- `interval`: 客户端建议的轮询时间间隔（秒）。
+- `expires_in`: 设备码有效时长（秒，默认 30 分钟）。
+
+### 2. GET /api/auth/device?user_code=ABCD-1234
+
+用户在浏览器打开 `/device` 时调用，用于核实用户码状态并将该设备码与当前登录的账号绑定认领。需携带用户 Session Cookie。
+
+**响应:**
+
+```json
+{
+  "user_code": "ABCD-1234",
+  "status": "pending",
+  "client_id": "uooc-browser-plugin",
+  "scope": "read write"
+}
+```
+
+### 3. POST /api/auth/device/approve
+
+登录用户在 `/device` 页面点击“批准授权”时调用。需携带用户 Session Cookie。
+
+**请求体:**
+
+```json
+{
+  "userCode": "ABCD-1234"
+}
+```
+
+**响应:**
+
+```json
+{
+  "success": true
+}
+```
+
+### 4. POST /api/auth/device/deny
+
+用户在 `/device` 页面拒绝本次授权。
+
+**请求体:**
+
+```json
+{
+  "userCode": "ABCD-1234"
+}
+```
+
+**响应:**
+
+```json
+{
+  "success": true
+}
+```
+
+### 5. POST /api/auth/device/token
+
+客户端以 `interval` 为周期轮询兑换 Access Token。
+
+**请求体:**
+
+```json
+{
+  "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
+  "device_code": "d_random_device_code_string...",
+  "client_id": "uooc-browser-plugin"
+}
+```
+
+**未完成授权时的响应 (HTTP 400):**
+
+- 用户尚未批准：`{ "error": "authorization_pending", "error_description": "..." }`
+- 轮询过快：`{ "error": "slow_down", "error_description": "..." }`
+- 用户拒绝：`{ "error": "access_denied", "error_description": "..." }`
+- 凭证过期：`{ "error": "expired_token", "error_description": "..." }`
+
+**授权成功时的响应 (HTTP 200):**
+
+```json
+{
+  "access_token": "s_session_token_xyz...",
+  "token_type": "Bearer",
+  "expires_in": 2678400,
+  "scope": "read write"
+}
+```
+
+获取到 `access_token` 后，客户端在随后的所有 API 请求头附带：
+`Authorization: Bearer <access_token>`
+即可直接继承该认证用户身份发起所有业务调用（包括答案修改与覆盖写入）。
+
+---
+
 ## 认证端点
 
 ### ALL /api/auth/*
@@ -446,6 +578,12 @@
 - `GET /api/auth/session` — 获取当前会话
 - `POST /api/auth/sign-in/social` — OAuth 登录
 - `POST /api/auth/sign-in/anonymous` — 匿名登录
+- `POST /api/auth/device/code` — 请求设备授权码
+- `POST /api/auth/device/token` — 兑换设备授权 Token
+- `GET /api/auth/device` — 核验设备码
+- `POST /api/auth/device/approve` — 批准设备授权
+- `POST /api/auth/device/deny` — 拒绝设备授权
+- `POST /api/auth/agent/approve-capability` — Agent Auth 授权
 - `POST /api/auth/sign-out` — 退出
 
 ---
