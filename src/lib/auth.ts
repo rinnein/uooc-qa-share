@@ -166,6 +166,38 @@ export const auth = betterAuth({
             required: ["question_id"],
           },
         },
+        {
+          name: "match_question_bank",
+          description:
+            "Match local question IDs with server database to detect missing questions and filtered tasks",
+          input: {
+            type: "object",
+            properties: {
+              cid: { type: "string" },
+              tid: { type: "string" },
+              local_question_ids: {
+                type: "array",
+                items: { type: "string" },
+              },
+              items: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    tid: { type: "string" },
+                    question_id: { type: "string" },
+                  },
+                  required: ["question_id"],
+                },
+              },
+              task_types: {
+                type: "array",
+                items: { type: "string" },
+              },
+              limit: { type: "number" },
+            },
+          },
+        },
       ],
     }),
     mcp({

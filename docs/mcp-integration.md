@@ -44,7 +44,7 @@ UOOC QA Share 平台内置了基于 Streamable HTTP 协议的高性能 MCP（Mod
 
 ## 3. 内置 MCP 工具清单 (Tools)
 
-平台注册了以下 8 个核心工具供 Agent 调度：
+平台注册了以下 9 个核心工具供 Agent 调度：
 
 ### 3.1 `search_questions`
 
@@ -119,6 +119,17 @@ UOOC QA Share 平台内置了基于 Streamable HTTP 协议的高性能 MCP（Mod
 - **参数**：
   - `question_id` (string, required): 内部题目 ID 或 UOOC `question_id`。
   - `embedding` (array of numbers, optional): 可选的 1536 维浮点数向量；若未提供，服务端将自动调用配置的模型生成。
+
+### 3.9 `match_question_bank`
+
+- **描述**：将本地维护的题库 ID 表与服务端比对：支持优先通过 `cid`（课程 ID）、可选 `tid` 缩小范围减少传输，确认服务端是否缺失题目并过滤出匹配的待补全任务。
+- **参数**：
+  - `cid` (string, optional): UOOC 课程 ID（推荐提供，优先过滤课程以极大压缩 body 体积）。
+  - `tid` (string, optional): UOOC 题组 ID（可选）。
+  - `local_question_ids` (array of strings, optional): 本地题目 ID 数组。
+  - `items` (array of objects, optional): 包含 `tid` 和 `question_id` 的对象数组。
+  - `task_types` (array of strings, optional): 可选任务类型过滤数组。
+  - `limit` (number, optional): 返回条数限制（默认 50）。
 
 ---
 

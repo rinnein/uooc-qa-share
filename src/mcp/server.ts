@@ -294,5 +294,57 @@ JSON 格式规范：
     },
   );
 
+  // Match local question bank with server questions
+  server.tool(
+    "match_question_bank",
+    "将本地维护的题库 ID 表与服务端比对：支持优先通过 cid、可选 tid 缩小范围减少传输，确认服务端缺失题目并过滤出匹配的待补全任务",
+    {
+      cid: z.string().optional().describe("UOOC 课程 ID（推荐指定以大幅缩小匹配范围）"),
+      tid: z.string().optional().describe("UOOC 题组 ID（可选）"),
+      local_question_ids: z.array(z.string()).optional().describe("本地题库中的题目 ID 列表"),
+      items: z
+        .array(
+          z.object({
+            tid: z.string().optional().describe("题组 ID"),
+            question_id: z.string().describe("题目 ID"),
+          }),
+        )
+        .optional()
+        .describe("包含 tid 的本地题目项列表"),
+      task_types: z
+        .array(z.string())
+        .optional()
+        .describe(
+          "可选的任务类型过滤 (stem_request / embedding_request / options_request / answer_request)",
+        ),
+      limit: z.number().optional().describe("返回任务条数限制 (默认 50)"),
+    },
+    async ({ cid, tid, local_question_ids, items, task_types, limit }) => {
+      try {
+        const baseUrl = env.BETTER_AUTH_URL;
+        const res = await fetch(`${baseUrl}/api/automation/match`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            cid,
+            tid,
+            local_question_ids,
+            items,
+            task_types,
+            limit,
+          }),
+        });
+        const result = await res.json();
+        return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+      } catch (e) {
+        return {
+          content: [
+            { type: "text" as const, text: `错误: ${e instanceof Error ? e.message : String(e)}` },
+          ],
+        };
+      }
+    },
+  );
+
   return server;
 }

@@ -215,6 +215,7 @@
 **查询参数:**
 
 - `type` (可选): 任务类型过滤 (`stem_request` / `embedding_request` / `options_request` / `answer_request` / `all`)
+- `cid` (可选): 按课程 ID 过滤（优先推荐，大幅减少不必要的任务范围）
 - `tid` (可选): 按题组 ID 过滤
 - `limit` (可选): 返回条数限制（默认 50，最大 100）
 
@@ -257,6 +258,78 @@
       "description": "题目已有题干但未计算向量嵌入，需计算并写入向量"
     }
   ]
+}
+```
+
+### POST /api/automation/match
+
+**题库匹配与服务端缺失确认接口**。允许将客户端本地维护的题库 ID 表与服务端比对：
+
+1. **确认服务端是否缺失题目**：比对找出本地 ID 表中存在但服务端数据库尚未收录的题目列表（`missingOnServer`），以便客户端触发批量上传。
+2. **过滤任务列表**：优先通过 `cid`（课程 ID）或 `tid`（题组 ID）缩小作用域，同时可传入本地题目 ID 表，仅返回该范围与本地存在关联的待更新任务（`matchedTasks`），极大减少请求与响应 body 体积。
+
+**请求体:**
+
+```json
+{
+  "cid": "course_789",
+  "tid": "task_456",
+  "local_question_ids": ["q_abc123", "q_abc124", "q_local_only"],
+  "task_types": ["stem_request", "embedding_request"],
+  "limit": 50
+}
+```
+
+也可以通过 `items` 提交带有专属 `tid` 的题目对象数组：
+
+```json
+{
+  "cid": "course_789",
+  "items": [
+    { "tid": "task_456", "question_id": "q_abc123" },
+    { "tid": "task_456", "question_id": "q_local_only" }
+  ]
+}
+```
+
+**响应示例:**
+
+```json
+{
+  "ok": true,
+  "scope": {
+    "cid": "course_789",
+    "tid": "task_456"
+  },
+  "stats": {
+    "localCount": 3,
+    "serverMatchedCount": 2,
+    "missingOnServerCount": 1,
+    "tasksCount": 2
+  },
+  "missingOnServer": [
+    {
+      "cid": "course_789",
+      "tid": "task_456",
+      "questionId": "q_local_only",
+      "description": "本地题库中存在但服务端尚未收录此题目，建议调用 /api/upload/batch 上传录入"
+    }
+  ],
+  "matchedTasks": [
+    {
+      "taskId": "stem_1024",
+      "taskType": "stem_request",
+      "questionId": 1024,
+      "uoocQuestionId": "q_abc123",
+      "type": "single",
+      "tid": "task_456",
+      "taskName": "第一章测验",
+      "cid": "course_789",
+      "courseName": "高等数学",
+      "description": "题目缺失题干文本内容，需补充题干"
+    }
+  ],
+  "allowedTaskTypes": ["stem_request", "embedding_request", "options_request"]
 }
 ```
 

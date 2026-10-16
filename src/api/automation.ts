@@ -8,6 +8,8 @@ import {
   resolveUserAuth,
   getAllowedTaskTypesForLevel,
   getMissingDataTasks,
+  matchQuestionBank,
+  type TaskType,
 } from "@/lib/auto-tasks";
 
 export const automationRoutes = new Elysia({ prefix: "/automation" })
@@ -25,6 +27,7 @@ export const automationRoutes = new Elysia({ prefix: "/automation" })
       const tasks = await getMissingDataTasks({
         allowedTypes,
         typeFilter: query.type,
+        cid: query.cid,
         tid: query.tid,
         limit,
       });
@@ -44,8 +47,58 @@ export const automationRoutes = new Elysia({ prefix: "/automation" })
     {
       query: t.Object({
         type: t.Optional(t.String()),
+        cid: t.Optional(t.String()),
         tid: t.Optional(t.String()),
         limit: t.Optional(t.String()),
+      }),
+    },
+  )
+
+  // 2. Match local question bank table with server questions
+  .post(
+    "/match",
+    async ({ body, request }) => {
+      const authContext = await resolveUserAuth(request);
+      const allowedTypes = getAllowedTaskTypesForLevel(authContext.permissionLevel);
+
+      const limit = body.limit && body.limit > 0 ? Math.min(body.limit, 100) : 50;
+      const taskTypes = body.task_types ? (body.task_types as TaskType[]) : undefined;
+
+      const result = await matchQuestionBank({
+        cid: body.cid,
+        tid: body.tid,
+        localQuestionIds: body.local_question_ids,
+        items: body.items,
+        taskTypes,
+        limit,
+        allowedTypes,
+      });
+
+      return {
+        ok: true,
+        account: {
+          userId: authContext.userId,
+          permissionLevel: authContext.permissionLevel,
+          isAnonymous: authContext.isAnonymous,
+        },
+        ...result,
+      };
+    },
+    {
+      body: t.Object({
+        cid: t.Optional(t.String()),
+        tid: t.Optional(t.String()),
+        local_question_ids: t.Optional(t.Array(t.String())),
+        items: t.Optional(
+          t.Array(
+            t.Object({
+              tid: t.Optional(t.String()),
+              question_id: t.String(),
+            }),
+          ),
+        ),
+        task_types: t.Optional(t.Array(t.String())),
+        limit: t.Optional(t.Number()),
       }),
     },
   )

@@ -309,6 +309,26 @@ x-api-key: uooc_...
 - **题干缺失任务 (`stem_request`)**：当插件发现本地缓存或当前页面有题干文本时，直接调用 `POST /api/automation/tasks/stem` 提交回填。
 - **向量计算任务 (`embedding_request`)**：对于有本地 embedding 运行能力的客户端，直接计算 1536 维向量并通过 `POST /api/automation/tasks/embedding` 回传，降低中心服务器计算负载。
 
+### 5.4 本地题库 ID 表匹配与缺失确认 (Bank Matching)
+
+当插件本地维护了一张已抓取的题目 ID 清单时，可在做题或空闲时调用匹配接口，**优先通过 `cid` 划分作用域**，将比对限制在指定课程内，极大减少每次发送的 body 体积：
+
+```http
+POST /api/automation/match
+Content-Type: application/json
+x-api-key: uooc_...
+
+{
+  "cid": "678",
+  "local_question_ids": ["q101", "q102", "q103"]
+}
+```
+
+**响应价值**：
+
+1. **确认服务端是否缺失题目**：返回的 `missingOnServer` 明确列出本地存在但服务端尚未收录的题目，插件可立即调用 `/api/upload/batch` 上传补充，实现全网题库生态众包补全。
+2. **过滤匹配的任务列表**：返回的 `matchedTasks` 仅包含本地题库中确实存在、但在服务端缺失题干/向量/选项/答案的任务，避免全量遍历整个题库。
+
 ---
 
 ## 6. 项目集成实战：fuckuooc (Node.js)

@@ -1,6 +1,6 @@
 import { db } from "@/db";
 import { questions, taskGroups, courses, answers, users } from "@/db/schema";
-import { eq, and, or, isNull, sql } from "drizzle-orm";
+import { eq, and, or, isNull, sql, inArray } from "drizzle-orm";
 
 export type TaskType = "stem_request" | "embedding_request" | "options_request" | "answer_request";
 
@@ -129,17 +129,28 @@ export interface AutoTaskItem {
 export async function getMissingDataTasks(options: {
   allowedTypes: TaskType[];
   typeFilter?: string;
+  taskTypes?: TaskType[];
+  cid?: string;
   tid?: string;
+  questionIds?: string[];
   limit?: number;
 }): Promise<AutoTaskItem[]> {
-  const { allowedTypes, typeFilter, tid, limit = 50 } = options;
+  const { allowedTypes, typeFilter, taskTypes, cid, tid, questionIds, limit = 50 } = options;
   if (allowedTypes.length === 0) {
     return [];
   }
 
-  const tasksToQuery = (
-    typeFilter && typeFilter !== "all" ? allowedTypes.filter((t) => t === typeFilter) : allowedTypes
-  ) as TaskType[];
+  // If questionIds filter was explicitly provided as an empty array, no matching questions exist
+  if (questionIds && questionIds.length === 0) {
+    return [];
+  }
+
+  let tasksToQuery: TaskType[] = allowedTypes;
+  if (taskTypes && taskTypes.length > 0) {
+    tasksToQuery = allowedTypes.filter((t) => taskTypes.includes(t));
+  } else if (typeFilter && typeFilter !== "all") {
+    tasksToQuery = allowedTypes.filter((t) => t === typeFilter);
+  }
 
   if (tasksToQuery.length === 0) {
     return [];
@@ -147,10 +158,23 @@ export async function getMissingDataTasks(options: {
 
   const results: AutoTaskItem[] = [];
 
+  // Common scope conditions helper
+  const buildScopeConditions = () => {
+    const conditions = [];
+    if (cid) conditions.push(eq(taskGroups.cid, cid));
+    if (tid) conditions.push(eq(questions.tid, tid));
+    if (questionIds && questionIds.length > 0) {
+      conditions.push(inArray(questions.questionId, questionIds));
+    }
+    return conditions;
+  };
+
   // 1. Missing stem: stem IS NULL OR stem = ''
   if (tasksToQuery.includes("stem_request") && results.length < limit) {
-    const stemConditions = [or(isNull(questions.stem), eq(questions.stem, ""))];
-    if (tid) stemConditions.push(eq(questions.tid, tid));
+    const stemConditions = [
+      or(isNull(questions.stem), eq(questions.stem, "")),
+      ...buildScopeConditions(),
+    ];
 
     const missingStemQuestions = await db
       .select({
@@ -189,8 +213,8 @@ export async function getMissingDataTasks(options: {
     const embConditions = [
       sql`${questions.stem} IS NOT NULL AND ${questions.stem} != ''`,
       isNull(questions.stemEmbedding),
+      ...buildScopeConditions(),
     ];
-    if (tid) embConditions.push(eq(questions.tid, tid));
 
     const missingEmbQuestions = await db
       .select({
@@ -231,8 +255,8 @@ export async function getMissingDataTasks(options: {
     const optConditions = [
       sql`${questions.type} IN ('single', 'multiple', 'judge')`,
       isNull(questions.options),
+      ...buildScopeConditions(),
     ];
-    if (tid) optConditions.push(eq(questions.tid, tid));
 
     const missingOptQuestions = await db
       .select({
@@ -275,8 +299,8 @@ export async function getMissingDataTasks(options: {
         SELECT 1 FROM ${answers}
         WHERE ${answers.questionId} = ${questions.id} AND ${answers.isCorrect} = true
       )`,
+      ...buildScopeConditions(),
     ];
-    if (tid) ansConditions.push(eq(questions.tid, tid));
 
     const missingAnsQuestions = await db
       .select({
@@ -313,4 +337,158 @@ export async function getMissingDataTasks(options: {
   }
 
   return results;
+}
+
+export interface LocalQuestionRef {
+  tid?: string;
+  question_id: string;
+}
+
+export interface BankMatchOptions {
+  cid?: string;
+  tid?: string;
+  localQuestionIds?: string[];
+  items?: LocalQuestionRef[];
+  taskTypes?: TaskType[];
+  limit?: number;
+  allowedTypes: TaskType[];
+}
+
+export interface MissingOnServerItem {
+  cid?: string | null;
+  tid?: string | null;
+  questionId: string;
+  description: string;
+}
+
+export interface BankMatchResult {
+  scope: {
+    cid?: string;
+    tid?: string;
+  };
+  stats: {
+    localCount: number;
+    serverMatchedCount: number;
+    missingOnServerCount: number;
+    tasksCount: number;
+  };
+  missingOnServer: MissingOnServerItem[];
+  matchedTasks: AutoTaskItem[];
+  allowedTaskTypes: TaskType[];
+}
+
+/**
+ * Match a locally maintained question ID table with the server database.
+ * 1. Confirms whether the server is missing questions (local has questions not on server).
+ * 2. Filters tasks for matched questions (scoped by cid / tid) according to allowed write permissions.
+ */
+export async function matchQuestionBank(options: BankMatchOptions): Promise<BankMatchResult> {
+  const { cid, tid, localQuestionIds, items, taskTypes, limit = 50, allowedTypes } = options;
+
+  // 1. Normalize local question entries
+  const localEntries: Array<{ tid?: string; questionId: string }> = [];
+  const seen = new Set<string>();
+
+  if (localQuestionIds) {
+    for (const qid of localQuestionIds) {
+      const trimmed = qid?.trim();
+      if (!trimmed) continue;
+      const key = `${tid ?? ""}:${trimmed}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        localEntries.push({ tid, questionId: trimmed });
+      }
+    }
+  }
+
+  if (items) {
+    for (const item of items) {
+      const qid = item.question_id?.trim();
+      if (!qid) continue;
+      const itemTid = item.tid ?? tid;
+      const key = `${itemTid ?? ""}:${qid}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        localEntries.push({ tid: itemTid, questionId: qid });
+      }
+    }
+  }
+
+  // 2. Query server questions within scope (cid / tid and questionIds if present)
+  const uniqueQids = Array.from(new Set(localEntries.map((e) => e.questionId)));
+
+  const scopeConditions = [];
+  if (cid) scopeConditions.push(eq(taskGroups.cid, cid));
+  if (tid) scopeConditions.push(eq(questions.tid, tid));
+  if (uniqueQids.length > 0) {
+    scopeConditions.push(inArray(questions.questionId, uniqueQids));
+  }
+
+  const serverQuestions =
+    scopeConditions.length > 0 || localEntries.length === 0
+      ? await db
+          .select({
+            id: questions.id,
+            questionId: questions.questionId,
+            tid: questions.tid,
+            cid: taskGroups.cid,
+          })
+          .from(questions)
+          .innerJoin(taskGroups, eq(questions.tid, taskGroups.tid))
+          .where(scopeConditions.length > 0 ? and(...scopeConditions) : undefined)
+      : [];
+
+  // Build lookup index for server questions
+  const serverTidQidSet = new Set(
+    serverQuestions.filter((sq) => sq.questionId).map((sq) => `${sq.tid}:${sq.questionId}`),
+  );
+  const serverQidSet = new Set(
+    serverQuestions.filter((sq) => sq.questionId).map((sq) => sq.questionId as string),
+  );
+
+  const matchedServerQuestionIds = new Set<string>();
+  const missingOnServer: MissingOnServerItem[] = [];
+
+  for (const entry of localEntries) {
+    const exists = entry.tid
+      ? serverTidQidSet.has(`${entry.tid}:${entry.questionId}`)
+      : serverQidSet.has(entry.questionId);
+
+    if (exists) {
+      matchedServerQuestionIds.add(entry.questionId);
+    } else {
+      missingOnServer.push({
+        cid: cid ?? null,
+        tid: entry.tid ?? tid ?? null,
+        questionId: entry.questionId,
+        description: "本地题库中存在但服务端尚未收录此题目，建议调用 /api/upload/batch 上传录入",
+      });
+    }
+  }
+
+  // 3. Filter pending tasks for matched questions (or scoped cid/tid if no local entries were sent)
+  const matchedTasks = await getMissingDataTasks({
+    allowedTypes,
+    taskTypes,
+    cid,
+    tid,
+    questionIds: localEntries.length > 0 ? Array.from(matchedServerQuestionIds) : undefined,
+    limit,
+  });
+
+  return {
+    scope: {
+      cid,
+      tid,
+    },
+    stats: {
+      localCount: localEntries.length,
+      serverMatchedCount: matchedServerQuestionIds.size,
+      missingOnServerCount: missingOnServer.length,
+      tasksCount: matchedTasks.length,
+    },
+    missingOnServer,
+    matchedTasks,
+    allowedTaskTypes: allowedTypes,
+  };
 }

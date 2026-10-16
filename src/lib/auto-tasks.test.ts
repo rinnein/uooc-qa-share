@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vite-plus/test";
 
-vi.mock("@/db", () => ({
-  db: {
+const { mockDb } = vi.hoisted(() => ({
+  mockDb: {
     query: {
       users: {
         findFirst: vi.fn(),
@@ -11,7 +11,11 @@ vi.mock("@/db", () => ({
   },
 }));
 
-import { getAllowedTaskTypesForLevel } from "./auto-tasks";
+vi.mock("@/db", () => ({
+  db: mockDb,
+}));
+
+import { getAllowedTaskTypesForLevel, matchQuestionBank } from "./auto-tasks";
 
 describe("getAllowedTaskTypesForLevel", () => {
   it("should return empty array for level 'none'", () => {
@@ -43,5 +47,42 @@ describe("getAllowedTaskTypesForLevel", () => {
       "options_request",
       "answer_request",
     ]);
+  });
+});
+
+describe("matchQuestionBank", () => {
+  it("should identify questions missing on server and filter matched tasks", async () => {
+    const mockServerQuestions = [
+      { id: 101, questionId: "q_existing_1", tid: "tid_1", cid: "cid_1" },
+      { id: 102, questionId: "q_existing_2", tid: "tid_1", cid: "cid_1" },
+    ];
+
+    mockDb.select.mockImplementation(() => ({
+      from: vi.fn().mockReturnValue({
+        innerJoin: vi.fn().mockReturnValue({
+          leftJoin: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              limit: vi.fn().mockResolvedValue([]),
+            }),
+          }),
+          where: vi.fn().mockResolvedValue(mockServerQuestions),
+        }),
+      }),
+    }));
+
+    const result = await matchQuestionBank({
+      cid: "cid_1",
+      tid: "tid_1",
+      localQuestionIds: ["q_existing_1", "q_missing_server"],
+      allowedTypes: ["stem_request"],
+    });
+
+    expect(result.scope.cid).toBe("cid_1");
+    expect(result.scope.tid).toBe("tid_1");
+    expect(result.stats.localCount).toBe(2);
+    expect(result.stats.serverMatchedCount).toBe(1);
+    expect(result.stats.missingOnServerCount).toBe(1);
+    expect(result.missingOnServer).toHaveLength(1);
+    expect(result.missingOnServer[0].questionId).toBe("q_missing_server");
   });
 });
