@@ -4,6 +4,7 @@ import { env } from "@/lib/env";
 import { questionsRoutes } from "./questions";
 import { tasksRoutes } from "./tasks";
 import { uploadRoutes } from "./upload";
+import { automationRoutes } from "./automation";
 
 const corsOrigins = env.CORS_ORIGINS.split(",").filter(Boolean);
 
@@ -17,4 +18,5 @@ export const api = new Elysia({ prefix: "/api" })
   .use(questionsRoutes)
   .use(tasksRoutes)
   .use(uploadRoutes)
+  .use(automationRoutes)
   .get("/health", () => ({ ok: true, time: new Date().toISOString() }));

@@ -127,6 +127,45 @@ export const auth = betterAuth({
             required: ["data"],
           },
         },
+        {
+          name: "list_pending_tasks",
+          description: "List pending tasks calculated from missing data in database",
+          input: {
+            type: "object",
+            properties: {
+              type: { type: "string" },
+              tid: { type: "string" },
+              limit: { type: "number" },
+            },
+          },
+        },
+        {
+          name: "fulfill_stem_task",
+          description: "Fulfill missing stem text for a question",
+          input: {
+            type: "object",
+            properties: {
+              question_id: { type: "string" },
+              stem: { type: "string" },
+            },
+            required: ["question_id", "stem"],
+          },
+        },
+        {
+          name: "fulfill_embedding_task",
+          description: "Fulfill missing stem embedding vector for a question",
+          input: {
+            type: "object",
+            properties: {
+              question_id: { type: "string" },
+              embedding: {
+                type: "array",
+                items: { type: "number" },
+              },
+            },
+            required: ["question_id"],
+          },
+        },
       ],
     }),
     mcp({

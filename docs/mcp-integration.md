@@ -44,7 +44,7 @@ UOOC QA Share 平台内置了基于 Streamable HTTP 协议的高性能 MCP（Mod
 
 ## 3. 内置 MCP 工具清单 (Tools)
 
-平台注册了以下 5 个核心工具供 Agent 调度：
+平台注册了以下 8 个核心工具供 Agent 调度：
 
 ### 3.1 `search_questions`
 
@@ -97,6 +97,28 @@ UOOC QA Share 平台内置了基于 Streamable HTTP 协议的高性能 MCP（Mod
     ]
   }
   ```
+
+### 3.6 `list_pending_tasks`
+
+- **描述**：列出数据库中缺失可选数据（题干、向量、选项、答案等）的待补全自动任务列表，Agent 可根据返回的任务列表自主执行数据清洗与补全。
+- **参数**：
+  - `type` (string, optional): 任务类型过滤 (`all` / `stem_request` / `embedding_request` / `options_request` / `answer_request`)。
+  - `tid` (string, optional): 过滤特定题组 ID。
+  - `limit` (number, optional): 获取数量限制（默认 20，最大 100）。
+
+### 3.7 `fulfill_stem_task`
+
+- **描述**：为缺失题干的题目补全完整题干文本内容，平台将自动计算 `stem_hash` 并生成词向量。
+- **参数**：
+  - `question_id` (string, required): 内部题目 ID 或 UOOC `question_id`。
+  - `stem` (string, required): 完整的题干文本（可包含原始 HTML 标签）。
+
+### 3.8 `fulfill_embedding_task`
+
+- **描述**：为已有题干但缺失向量的题目生成或补充 1536 维词向量。
+- **参数**：
+  - `question_id` (string, required): 内部题目 ID 或 UOOC `question_id`。
+  - `embedding` (array of numbers, optional): 可选的 1536 维浮点数向量；若未提供，服务端将自动调用配置的模型生成。
 
 ---
 

@@ -191,6 +191,126 @@
 
 ---
 
+## 自动任务列表 (Automation Tasks)
+
+根据当前数据库中缺失的可选数据（如缺失题干、缺失向量、缺失选项、缺失答案等）动态计算任务，并根据请求凭证拥有的写权限级别过滤出其能够更新的任务。
+
+### 权限与任务类型映射
+
+| 任务类型 (`task_type`) | 触发条件                                      | 目标                                                  | 允许执行的写权限级别                            |
+| ---------------------- | --------------------------------------------- | ----------------------------------------------------- | ----------------------------------------------- |
+| `stem_request`         | `stem IS NULL OR stem = ''`                   | 补充题目完整题干文本，自动重算 `stem_hash` 并生成向量 | **匿名 API Key / 认证用户 / 管理员**            |
+| `embedding_request`    | `stem IS NOT NULL AND stem_embedding IS NULL` | 为已有题干题目计算并补充 1536 维词向量                | **匿名 API Key / 认证用户 / 管理员**            |
+| `options_request`      | 选择题/判断题且 `options IS NULL`             | 补充题目选项列表                                      | **匿名 API Key / 认证用户 / 管理员**            |
+| `answer_request`       | 尚无关联 `isCorrect = true` 的答案            | 补充确定的正确答案                                    | **认证用户 / 管理员**（匿名用户被拒绝以防污染） |
+
+### GET /api/automation/tasks
+
+根据当前认证身份的写权限级别获取待补全的任务列表。未登录用户不会返回可执行任务。
+
+**请求头 (可选):**
+
+- `x-api-key: <apiKey>` 或 `Authorization: Bearer <apiKey>`
+
+**查询参数:**
+
+- `type` (可选): 任务类型过滤 (`stem_request` / `embedding_request` / `options_request` / `answer_request` / `all`)
+- `tid` (可选): 按题组 ID 过滤
+- `limit` (可选): 返回条数限制（默认 50，最大 100）
+
+**响应示例:**
+
+```json
+{
+  "ok": true,
+  "account": {
+    "userId": "user_xyz",
+    "permissionLevel": "anonymous",
+    "isAnonymous": true
+  },
+  "allowedTaskTypes": ["stem_request", "embedding_request", "options_request"],
+  "count": 2,
+  "tasks": [
+    {
+      "taskId": "stem_1024",
+      "taskType": "stem_request",
+      "questionId": 1024,
+      "uoocQuestionId": "q_abc123",
+      "type": "single",
+      "tid": "task_456",
+      "taskName": "第一章测验",
+      "cid": "course_789",
+      "courseName": "高等数学",
+      "description": "题目缺失题干文本内容，需补充题干"
+    },
+    {
+      "taskId": "emb_1025",
+      "taskType": "embedding_request",
+      "questionId": 1025,
+      "uoocQuestionId": "q_abc124",
+      "type": "single",
+      "tid": "task_456",
+      "taskName": "第一章测验",
+      "cid": "course_789",
+      "courseName": "高等数学",
+      "stemPreview": "设函数 f(x) 在区间 [a, b] 上连续...",
+      "description": "题目已有题干但未计算向量嵌入，需计算并写入向量"
+    }
+  ]
+}
+```
+
+### POST /api/automation/tasks/stem
+
+回填题目的缺失题干文本。需要写权限（匿名 API Key 允许填补空题干；若题目已有题干则匿名用户不可覆盖）。更新后系统自动重算 `stemHash` 并尝试生成 `stemEmbedding`。
+
+**请求体:**
+
+```json
+{
+  "question_id": "1024",
+  "stem": "以下关于矩阵初等变换的说法中正确的是？"
+}
+```
+
+**响应:**
+
+```json
+{
+  "ok": true,
+  "questionId": 1024,
+  "uoocQuestionId": "q_abc123",
+  "stemUpdated": true,
+  "embeddingCalculated": true
+}
+```
+
+### POST /api/automation/tasks/embedding
+
+为已有题干的题目写入或计算 1536 维向量。需要写权限。客户端可直接传入计算好的向量数组；若未传，服务端将调用配置的 Embedding API 进行计算。
+
+**请求体:**
+
+```json
+{
+  "question_id": "1025",
+  "embedding": [0.0123, 0.0456, "... (共1536维浮点数)"]
+}
+```
+
+**响应:**
+
+```json
+{
+  "ok": true,
+  "questionId": 1025,
+  "uoocQuestionId": "q_abc124",
+  "embeddingUpdated": true
+}
+```
+
+---
+
 ## 健康检查
 
 ### GET /api/health

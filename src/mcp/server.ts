@@ -199,5 +199,100 @@ JSON 格式规范：
     },
   );
 
+  // List pending automation tasks based on missing data (stem, embedding, options, answers)
+  server.tool(
+    "list_pending_tasks",
+    "列出数据库中缺失可选数据（题干、向量、选项、答案等）的待补全自动任务列表",
+    {
+      type: z
+        .enum(["all", "stem_request", "embedding_request", "options_request", "answer_request"])
+        .optional()
+        .describe(
+          "任务类型过滤 (stem_request: 缺失题干, embedding_request: 缺失向量, options_request: 缺失选项, answer_request: 缺失答案)",
+        ),
+      tid: z.string().optional().describe("按题组 ID (tid) 过滤"),
+      limit: z.number().optional().describe("获取数量限制 (默认 20，最大 100)"),
+    },
+    async ({ type, tid, limit }) => {
+      try {
+        const baseUrl = env.BETTER_AUTH_URL;
+        const queryParams = new URLSearchParams();
+        if (type && type !== "all") queryParams.set("type", type);
+        if (tid) queryParams.set("tid", tid);
+        if (limit) queryParams.set("limit", String(limit));
+
+        const res = await fetch(`${baseUrl}/api/automation/tasks?${queryParams.toString()}`);
+        const result = await res.json();
+        return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+      } catch (e) {
+        return {
+          content: [
+            { type: "text" as const, text: `错误: ${e instanceof Error ? e.message : String(e)}` },
+          ],
+        };
+      }
+    },
+  );
+
+  // Fulfill missing stem request
+  server.tool(
+    "fulfill_stem_task",
+    "补全题目的缺失题干文本",
+    {
+      question_id: z.string().describe("内部题目 ID 或 UOOC 题号"),
+      stem: z.string().describe("完整的题干文本内容"),
+    },
+    async ({ question_id, stem }) => {
+      try {
+        const baseUrl = env.BETTER_AUTH_URL;
+        const res = await fetch(`${baseUrl}/api/automation/tasks/stem`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ question_id, stem }),
+        });
+        const result = await res.json();
+        return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+      } catch (e) {
+        return {
+          content: [
+            { type: "text" as const, text: `错误: ${e instanceof Error ? e.message : String(e)}` },
+          ],
+        };
+      }
+    },
+  );
+
+  // Fulfill missing embedding calculation request
+  server.tool(
+    "fulfill_embedding_task",
+    "为题目生成或写入 1536 维向量嵌入",
+    {
+      question_id: z.string().describe("内部题目 ID 或 UOOC 题号"),
+      embedding: z
+        .array(z.number())
+        .length(1536)
+        .optional()
+        .describe("可选的 1536 维向量数组（若未提供，服务端将尝试调用配置的模型计算）"),
+    },
+    async ({ question_id, embedding }) => {
+      try {
+        const baseUrl = env.BETTER_AUTH_URL;
+        const res = await fetch(`${baseUrl}/api/automation/tasks/embedding`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ question_id, embedding }),
+        });
+        const result = await res.json();
+        return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+      } catch (e) {
+        return {
+          content: [
+            { type: "text" as const, text: `错误: ${e instanceof Error ? e.message : String(e)}` },
+          ],
+        };
+      }
+    },
+  );
+
   return server;
 }

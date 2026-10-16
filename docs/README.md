@@ -26,10 +26,10 @@ pnpm dev
 
 ## 文档
 
-- [API 参考](./api-reference.md) — 完整的 REST API 文档（含 API Key、Webview 注入与鉴权模型）
-- [插件接入指南](./plugin-integration.md) — fuckuooc、your-szu-life 等插件的完整接入指南（含 OAuth 预登录、静默匿名申请、账号绑定升级与空闲题库巡检）
-- [MCP 协议接入指南](./mcp-integration.md) — MCP 协议与 Agent Auth 接入说明（Claude Desktop、Cursor 配置及本地试题清洗入库）
-- [数据模型](./data-model.md) — 数据库结构、三级去重匹配策略与答案状态机约定
+- [API 参考](./api-reference.md) — 完整的 REST API 文档（含自动任务补全、API Key、Webview 注入与鉴权模型）
+- [插件接入指南](./plugin-integration.md) — fuckuooc、your-szu-life 等插件的完整接入指南（含 OAuth 预登录、静默匿名申请、账号绑定升级与空闲题库巡检/任务认领）
+- [MCP 协议接入指南](./mcp-integration.md) — MCP 协议与 Agent Auth 接入说明（Claude Desktop、Cursor 配置、8 个核心工具及本地试题清洗入库）
+- [数据模型](./data-model.md) — 数据库结构、三级去重匹配策略、答案状态机与自动任务模型约定
 
 ## 技术栈
 

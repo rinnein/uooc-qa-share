@@ -296,6 +296,19 @@ GET https://www.uooc.net.cn/exam/view?cid={cid}&tid={tid}
    - 解析出已交卷试卷中的题目与标准答案；
    - 打包调用 `POST /api/upload/batch` 同步至题库平台。
 
+### 5.3 空闲时自动任务认领与富化 (Automation Tasks)
+
+除了题组级同步外，插件或挂载的 Background Worker 还可以在空闲阶段拉取服务端针对题目的细粒度缺失数据补全任务：
+
+```http
+GET /api/automation/tasks?limit=20
+x-api-key: uooc_...
+```
+
+- 服务端会根据当前 API Key 权限级别，仅返回该账号能执行的任务（例如匿名 Key 会返回 `stem_request` 与 `embedding_request`）。
+- **题干缺失任务 (`stem_request`)**：当插件发现本地缓存或当前页面有题干文本时，直接调用 `POST /api/automation/tasks/stem` 提交回填。
+- **向量计算任务 (`embedding_request`)**：对于有本地 embedding 运行能力的客户端，直接计算 1536 维向量并通过 `POST /api/automation/tasks/embedding` 回传，降低中心服务器计算负载。
+
 ---
 
 ## 6. 项目集成实战：fuckuooc (Node.js)
