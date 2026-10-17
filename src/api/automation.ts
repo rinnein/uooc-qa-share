@@ -4,6 +4,7 @@ import { questions } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { hashStem } from "@/lib/stem";
 import { EMBEDDING_DIMENSIONS, resolveEmbedding } from "@/lib/embedding";
+import { questionCacheManager } from "@/lib/cache";
 import {
   resolveUserAuth,
   getAllowedTaskTypesForLevel,
@@ -154,6 +155,8 @@ export const automationRoutes = new Elysia({ prefix: "/automation" })
         })
         .where(eq(questions.id, targetQuestion.id));
 
+      questionCacheManager.clear();
+
       return {
         ok: true,
         questionId: targetQuestion.id,
@@ -219,6 +222,8 @@ export const automationRoutes = new Elysia({ prefix: "/automation" })
           updatedAt: new Date(),
         })
         .where(eq(questions.id, targetQuestion.id));
+
+      questionCacheManager.clear();
 
       return {
         ok: true,

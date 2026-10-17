@@ -5,6 +5,7 @@ import { eq, and, sql } from "drizzle-orm";
 import { hashStem } from "@/lib/stem";
 import { EMBEDDING_DIMENSIONS, resolveEmbedding } from "@/lib/embedding";
 import { auth } from "@/lib/auth";
+import { questionCacheManager } from "@/lib/cache";
 
 const QuestionSchema = t.Object({
   question_id: t.String(),
@@ -272,6 +273,9 @@ export const uploadRoutes = new Elysia({ prefix: "/upload" }).post(
         internal_id: questionInternalId,
       });
     }
+
+    // Invalidate cached question queries as new/updated questions or answers were written
+    questionCacheManager.clear();
 
     return { ok: true, results };
   },

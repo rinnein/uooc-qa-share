@@ -21,6 +21,9 @@ export const api = new Elysia({ prefix: "/api" })
         "api-key",
         "x-session-id",
         "mcp-protocol-version",
+        "If-None-Match",
+        "Cache-Control",
+        "x-refresh",
         "*",
       ],
       exposeHeaders: [
@@ -30,6 +33,9 @@ export const api = new Elysia({ prefix: "/api" })
         "x-session-id",
         "mcp-protocol-version",
         "WWW-Authenticate",
+        "X-Cache",
+        "ETag",
+        "Cache-Control",
       ],
     }),
   )

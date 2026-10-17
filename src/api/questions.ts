@@ -4,6 +4,7 @@ import { questions, answers } from "@/db/schema";
 import { eq, and, sql } from "drizzle-orm";
 import { hashStem } from "@/lib/stem";
 import { EMBEDDING_DIMENSIONS, generateEmbedding } from "@/lib/embedding";
+import { questionCachePlugin } from "@/lib/cache";
 
 export async function searchQuestionsInternal(options: {
   q?: string;
@@ -107,6 +108,7 @@ export async function searchQuestionsInternal(options: {
 }
 
 export const questionsRoutes = new Elysia({ prefix: "/questions" })
+  .use(questionCachePlugin)
   // Get single question by internal ID or UOOC question_id
   .get(
     "/:id",
