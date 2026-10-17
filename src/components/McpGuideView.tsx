@@ -17,366 +17,124 @@ export default function McpGuideView() {
   }
 
   const mcpUrl = `${origin}/mcp`;
-  const discoveryUrl = `${origin}/.well-known/agent-configuration`;
-  const deviceUrl = `${origin}/device`;
 
-  const claudeDesktopConfig = JSON.stringify(
-    {
-      mcpServers: {
-        "uooc-qa-share": {
-          url: mcpUrl,
-        },
-      },
-    },
-    null,
-    2,
-  );
+  const installPrompt = `请帮我安装并配置 UOOC QA Share 的 MCP (Model Context Protocol) 服务：
 
-  const claudeDesktopWithKeyConfig = JSON.stringify(
-    {
-      mcpServers: {
-        "uooc-qa-share": {
-          url: mcpUrl,
-          headers: {
-            "x-api-key": "uooc_YOUR_API_KEY_HERE",
-          },
-        },
-      },
-    },
-    null,
-    2,
-  );
+- 服务名称: uooc-qa-share
+- 传输协议: HTTP / SSE (Streamable HTTP)
+- Server URL: ${mcpUrl}
+- (可选) Headers: 如果需要绑定认证账号以获得覆盖更新答案的权限，可添加请求头 x-api-key: <你的_API_KEY>
+
+请在当前环境的 MCP 配置文件或工具设置中添加该服务，并核验工具连接状态。`;
+
+  const scenarioPrompt = `这是我刚导出的 UOOC 测验结果 PDF，对应的课程号 cid 是 2048，题组号 tid 是 100234。请使用 MCP 工具 analyze_and_upload_qa 分析该文件，提取每道题的题型、题干、选项与确认答案，并通过 upload_answers 工具录入题库。`;
+
+  const cliCommand = `claude mcp add uooc-qa-share -- ${mcpUrl}`;
 
   return (
-    <div className="space-y-8 max-w-4xl mx-auto py-2">
+    <div className="space-y-8 max-w-3xl mx-auto py-4">
+      {/* 头部说明 */}
       <div className="space-y-3">
         <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border bg-primary/5 text-primary text-xs font-medium">
           <span>🤖 Model Context Protocol</span>
           <span>·</span>
-          <span>Streamable HTTP & CORS Ready</span>
+          <span>AI 自动化接入</span>
         </div>
-        <h1 className="text-3xl font-bold tracking-tight">MCP + AI Agent 模式接入说明</h1>
-        <p className="text-muted-foreground text-base leading-relaxed">
-          平台内置标准的 MCP（Model Context Protocol）协议端点，支持跨域访问与 Agent Auth
-          规范。您可以在 Claude Desktop、Cursor、Cline、Windsurf
-          等客户端中直接连接本平台，利用大模型分析本地包含答案的试卷
-          PDF、截图与文本，自动清洗并一键批量入库。
+        <h1 className="text-3xl font-bold tracking-tight">MCP + AI Agent 接入指南</h1>
+        <p className="text-muted-foreground text-sm leading-relaxed">
+          平台内置标准的 MCP 服务端点。无需手动翻找和修改配置文件，您可以直接将安装 Prompt
+          发送给支持 MCP 的 AI Agent（如 Claude Code、Cursor、Windsurf、Cline、Roo Code、Claude
+          Desktop 等），让 AI 自动帮您连接题库。
         </p>
       </div>
 
-      {/* Endpoint Cards */}
-      <div className="grid gap-4 sm:grid-cols-3">
-        <div className="rounded-xl border p-4 bg-card space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-              MCP Server Endpoint
-            </span>
-            <button
-              type="button"
-              onClick={() => copyText("mcpUrl", mcpUrl)}
-              className="text-xs rounded border px-2 py-0.5 hover:bg-accent transition-colors"
-            >
-              {copiedKey === "mcpUrl" ? "已复制 ✓" : "复制 URL"}
-            </button>
-          </div>
-          <code className="text-sm font-mono block p-2 rounded bg-muted/50 break-all text-primary font-medium">
-            {mcpUrl}
-          </code>
-          <p className="text-xs text-muted-foreground">
-            支持 HTTP POST (JSON-RPC) 与 GET SSE，跨域已开启。
-          </p>
-        </div>
-
-        <div className="rounded-xl border p-4 bg-card space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-              Agent Auth Discovery
-            </span>
-            <button
-              type="button"
-              onClick={() => copyText("discoveryUrl", discoveryUrl)}
-              className="text-xs rounded border px-2 py-0.5 hover:bg-accent transition-colors"
-            >
-              {copiedKey === "discoveryUrl" ? "已复制 ✓" : "复制 URL"}
-            </button>
-          </div>
-          <code className="text-sm font-mono block p-2 rounded bg-muted/50 break-all text-foreground/80">
-            {discoveryUrl}
-          </code>
-          <p className="text-xs text-muted-foreground">
-            遵循 Agent Auth 协议规范，供智能体自主发现端点与 Capabilities。
-          </p>
-        </div>
-
-        <div className="rounded-xl border p-4 bg-card space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-              Device Auth (无回调)
-            </span>
-            <button
-              type="button"
-              onClick={() => copyText("deviceUrl", deviceUrl)}
-              className="text-xs rounded border px-2 py-0.5 hover:bg-accent transition-colors"
-            >
-              {copiedKey === "deviceUrl" ? "已复制 ✓" : "复制 URL"}
-            </button>
-          </div>
-          <code className="text-sm font-mono block p-2 rounded bg-muted/50 break-all text-foreground/80">
-            {deviceUrl}
-          </code>
-          <p className="text-xs text-muted-foreground">
-            RFC 8628 设备授权流，供插件与外部 Agent 在无回调地址时完成认证。
-          </p>
-        </div>
-      </div>
-
-      {/* Client Setup Guide */}
-      <div className="space-y-4">
-        <h2 className="text-xl font-bold flex items-center gap-2">
-          <span>⚡ 客户端快速配置</span>
-        </h2>
-
-        <div className="space-y-4">
-          {/* Claude Desktop */}
-          <div className="rounded-lg border p-4 space-y-3 bg-muted/10">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="font-semibold text-sm">1. Claude Desktop 配置</h3>
-                <p className="text-xs text-muted-foreground">
-                  编辑 <code>claude_desktop_config.json</code> 文件加入服务器
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => copyText("claudeJson", claudeDesktopConfig)}
-                className="text-xs rounded border px-2 py-1 bg-background hover:bg-accent"
-              >
-                {copiedKey === "claudeJson" ? "已复制 ✓" : "复制配置"}
-              </button>
-            </div>
-            <pre className="p-3 rounded-md bg-muted/60 font-mono text-xs overflow-auto">
-              {claudeDesktopConfig}
-            </pre>
+      {/* 1. 直接指导 AI 安装 MCP 的 Prompt 示例 */}
+      <div className="rounded-xl border bg-card p-5 space-y-4 shadow-sm">
+        <div className="flex items-center justify-between gap-3">
+          <div className="space-y-1">
+            <h2 className="text-lg font-bold flex items-center gap-2 text-foreground">
+              <span>⚡ 直接指导 AI 安装 MCP</span>
+            </h2>
             <p className="text-xs text-muted-foreground">
-              注：若希望 Agent 以您的特定身份录入题目（覆盖更新权限），可在 <code>headers</code>{" "}
-              中添加 <code>x-api-key</code>：
+              复制以下 Prompt，直接发送给您的 AI 助手，AI 会自动帮您在本地完成 MCP Server 配置：
             </p>
-            <pre className="p-2.5 rounded-md bg-muted/40 font-mono text-xs overflow-auto">
-              {claudeDesktopWithKeyConfig}
-            </pre>
           </div>
-
-          {/* Cursor / Windsurf / Cline */}
-          <div className="rounded-lg border p-4 space-y-2 bg-muted/10">
-            <h3 className="font-semibold text-sm">2. Cursor / Windsurf / Cline / Roo Code 配置</h3>
-            <p className="text-xs text-muted-foreground">在客户端的 MCP 设置中添加自定义服务器：</p>
-            <ul className="text-xs space-y-1 list-disc list-inside text-muted-foreground">
-              <li>
-                <strong>Server Name</strong>: <code>uooc-qa-share</code>
-              </li>
-              <li>
-                <strong>Type</strong>: <code>sse</code> 或 <code>http</code>
-              </li>
-              <li>
-                <strong>Server URL</strong>: <code>{mcpUrl}</code>
-              </li>
-              <li>
-                <strong>Headers (可选)</strong>: <code>x-api-key: uooc_YOUR_KEY</code>{" "}
-                (用于绑定特定账号)
-              </li>
-            </ul>
-          </div>
-
-          {/* Plugin & Agent Device Authorization Flow */}
-          <div className="rounded-lg border p-4 space-y-3 bg-muted/10">
-            <div>
-              <h3 className="font-semibold text-sm">
-                3. 浏览器插件 / 油猴脚本 / 外部 Agent（无回调地址认证）
-              </h3>
-              <p className="text-xs text-muted-foreground">
-                基于 RFC 8628 Device Authorization
-                标准规范。在无法配置固定重定向回调地址的环境（如油猴插件、扩展程序或本地 Agent
-                环境）下，直接通过设备码完成认证与账号授权绑定。
-              </p>
-            </div>
-            <div className="space-y-2">
-              <p className="text-xs text-muted-foreground font-semibold">标准接入流程代码示例：</p>
-              <pre className="p-3 rounded-md bg-muted/60 font-mono text-xs overflow-auto">
-                {`// 1. 请求设备授权码
-const codeRes = await fetch("${origin}/api/auth/device/code", {
-  method: "POST",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({ client_id: "uooc-browser-plugin" }),
-});
-const { device_code, user_code, verification_uri_complete, interval } = await codeRes.json();
-
-// 2. 引导用户打开授权页面（或提示访问 /device 输入 user_code）
-window.open(verification_uri_complete, "_blank");
-
-// 3. 轮询获取 Session Access Token
-const timer = setInterval(async () => {
-  const tokenRes = await fetch("${origin}/api/auth/device/token", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      grant_type: "urn:ietf:params:oauth:grant-type:device_code",
-      device_code,
-      client_id: "uooc-browser-plugin",
-    }),
-  });
-
-  if (tokenRes.ok) {
-    clearInterval(timer);
-    const { access_token } = await tokenRes.json();
-    // 保存 access_token，后续通过请求头携带：Authorization: Bearer \${access_token}
-    console.log("认证成功！Token:", access_token);
-  }
-}, (interval || 5) * 1000);`}
-              </pre>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* How to use with PDF / Images */}
-      <div className="space-y-4 rounded-xl border p-5 bg-card">
-        <h2 className="text-xl font-bold flex items-center gap-2">
-          <span>📸 场景实战：Agent 本地分析 PDF / 截图自动入库</span>
-        </h2>
-        <p className="text-sm text-muted-foreground leading-relaxed">
-          平台内置了系统提示词模板 <code>analyze_and_upload_qa</code>。连接 MCP 后，您只需在 Agent
-          对话框中拖入试卷或解析文件，并给出简短指令，Agent 就会自动完成识别、清洗与上报：
-        </p>
-
-        <div className="rounded-lg border bg-muted/30 p-4 space-y-2">
-          <p className="text-xs font-semibold text-muted-foreground uppercase">
-            推荐发送给 Agent 的 Prompt 示例：
-          </p>
-          <div className="p-3 rounded bg-background border font-sans text-xs leading-relaxed text-foreground select-all">
-            "这是我刚导出的 UOOC 测验结果 PDF，对应的课程号 cid 是 2048，题组号 tid 是
-            100234。请使用 MCP 工具 analyze_and_upload_qa
-            分析该文件，提取每道题的题型、题干、选项与确认答案，并通过 upload_answers
-            工具录入题库。"
-          </div>
+          <button
+            type="button"
+            onClick={() => copyText("installPrompt", installPrompt)}
+            className="shrink-0 text-xs rounded-md border bg-primary text-primary-foreground px-3 py-1.5 hover:bg-primary/90 transition-colors font-medium"
+          >
+            {copiedKey === "installPrompt" ? "已复制 Prompt ✓" : "复制安装 Prompt"}
+          </button>
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-3 text-xs text-muted-foreground pt-1">
-          <div className="border rounded p-3 space-y-1">
-            <span className="font-semibold text-foreground block">1. 本地阅读与识别</span>
-            Agent 利用多模态能力直接在本地阅读 PDF 文档或截图标注，保留题干与选项中可能的 HTML
-            标签。
-          </div>
-          <div className="border rounded p-3 space-y-1">
-            <span className="font-semibold text-foreground block">2. 标准格式清洗</span>
-            区分单选/多选/判断/填空，分离已确认正确答案与排除错误答案。
-          </div>
-          <div className="border rounded p-3 space-y-1">
-            <span className="font-semibold text-foreground block">3. 工具一键上传</span>
-            Agent 调用 <code>upload_answers</code> 工具入库，平台自动执行三级匹配去重与答案清理。
-          </div>
+        <div className="relative">
+          <pre className="p-3.5 rounded-lg bg-muted/60 font-sans text-xs leading-relaxed overflow-auto whitespace-pre-wrap text-foreground select-all border">
+            {installPrompt}
+          </pre>
         </div>
-      </div>
 
-      {/* Tools List */}
-      <div className="space-y-4">
-        <h2 className="text-xl font-bold flex items-center gap-2">
-          <span>🛠️ 平台注册的 MCP 工具列表</span>
-        </h2>
-        <div className="grid gap-3">
-          <div className="rounded-lg border p-3.5 space-y-1.5 bg-card">
-            <div className="flex items-center gap-2">
-              <code className="text-xs font-bold text-primary px-1.5 py-0.5 rounded bg-primary/10">
-                search_questions
-              </code>
-              <span className="text-xs text-muted-foreground">搜索题目</span>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              按题干关键词或自然语言描述搜索题库。支持 pgvector 词向量语义检索与 ILIKE
-              文本模糊回退。
-            </p>
-            <div className="text-[11px] font-mono text-muted-foreground">
-              参数: <code>query: string</code> (搜索词)
-            </div>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-2 border-t text-xs text-muted-foreground">
+          <div className="flex items-center gap-2 font-mono text-[11px]">
+            <span className="text-muted-foreground font-sans">CLI 快捷命令:</span>
+            <code className="p-1 rounded bg-muted/50 border">{cliCommand}</code>
           </div>
-
-          <div className="rounded-lg border p-3.5 space-y-1.5 bg-card">
-            <div className="flex items-center gap-2">
-              <code className="text-xs font-bold text-primary px-1.5 py-0.5 rounded bg-primary/10">
-                get_task_answers
-              </code>
-              <span className="text-xs text-muted-foreground">获取题组全量试卷与答案</span>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              获取某个题组(tid)下所有题目以及已知答案列表（包含正确答案与已排除的错误答案）。
-            </p>
-            <div className="text-[11px] font-mono text-muted-foreground">
-              参数: <code>tid: string</code> (UOOC 题组 ID)
-            </div>
-          </div>
-
-          <div className="rounded-lg border p-3.5 space-y-1.5 bg-card">
-            <div className="flex items-center gap-2">
-              <code className="text-xs font-bold text-primary px-1.5 py-0.5 rounded bg-primary/10">
-                get_question_answer
-              </code>
-              <span className="text-xs text-muted-foreground">单题详情</span>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              获取单道题目的详情、选项、置信度与答案记录（支持平台内部数字 ID 或 UOOC DOM
-              question_id）。
-            </p>
-            <div className="text-[11px] font-mono text-muted-foreground">
-              参数: <code>question_id: string</code>
-            </div>
-          </div>
-
-          <div className="rounded-lg border p-3.5 space-y-1.5 bg-card">
-            <div className="flex items-center gap-2">
-              <code className="text-xs font-bold text-primary px-1.5 py-0.5 rounded bg-primary/10">
-                get_course_tasks
-              </code>
-              <span className="text-xs text-muted-foreground">课程题组列表</span>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              获取指定课程号(cid)下已收录的全部测验/任务题组。
-            </p>
-            <div className="text-[11px] font-mono text-muted-foreground">
-              参数: <code>cid: string</code> (课程 ID)
-            </div>
-          </div>
-
-          <div className="rounded-lg border p-3.5 space-y-1.5 bg-card">
-            <div className="flex items-center gap-2">
-              <code className="text-xs font-bold text-primary px-1.5 py-0.5 rounded bg-primary/10">
-                upload_answers
-              </code>
-              <span className="text-xs text-muted-foreground">批量清洗上传题目</span>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              批量上传题目、选项与答案。支持单题正确答案录入或错误答案排除。
-            </p>
-            <div className="text-[11px] font-mono text-muted-foreground">
-              参数: <code>data: string</code> (符合平台规范的 JSON 字符串)
-            </div>
-          </div>
+          <button
+            type="button"
+            onClick={() => copyText("cliCommand", cliCommand)}
+            className="self-start sm:self-auto text-[11px] underline hover:text-foreground"
+          >
+            {copiedKey === "cliCommand" ? "已复制 ✓" : "复制命令"}
+          </button>
         </div>
-      </div>
 
-      {/* Auth Info */}
-      <div className="rounded-xl border p-4 bg-muted/20 space-y-2 text-xs text-muted-foreground">
-        <h3 className="font-semibold text-foreground text-sm">🔒 认证与身份继承说明</h3>
-        <p>
-          - <strong>Agent 默认连接</strong>：采用 Agent Auth
-          协议或匿名访问模式，平台自动分配临时匿名 Agent
-          用户态，允许查阅全库答案与新增试卷，但不可覆盖现有正确答案。
-        </p>
-        <p>
-          - <strong>升级至正式权限</strong>：在客户端配置中附带在
-          <a href="/login" className="underline text-primary mx-1">
+        <div className="text-xs text-muted-foreground bg-muted/20 rounded p-2.5">
+          💡 提示：如需绑定个人账号以获得答案覆盖更新权限，可先在{" "}
+          <a href="/login" className="text-primary underline">
             账户中心
-          </a>
-          生成的 API Key，Agent 上报时将自动继承您的认证用户身份，拥有完整覆盖与更新权限。
-        </p>
+          </a>{" "}
+          获取 API Key，并在 Prompt 中将 <code>&lt;你的_API_KEY&gt;</code> 替换为真实 Key。
+        </div>
+      </div>
+
+      {/* 2. 场景实战部分 */}
+      <div className="rounded-xl border p-5 bg-card space-y-4 shadow-sm">
+        <div className="flex items-center justify-between gap-3">
+          <div className="space-y-1">
+            <h2 className="text-lg font-bold flex items-center gap-2 text-foreground">
+              <span>📸 场景实战：Agent 本地分析 PDF / 截图自动入库</span>
+            </h2>
+            <p className="text-xs text-muted-foreground">
+              连接成功后，在 Agent 对话中拖入试卷或解析文件，并附带以下指令即可自动入库：
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => copyText("scenarioPrompt", scenarioPrompt)}
+            className="shrink-0 text-xs rounded-md border bg-background px-3 py-1.5 hover:bg-accent transition-colors font-medium"
+          >
+            {copiedKey === "scenarioPrompt" ? "已复制 Prompt ✓" : "复制实战 Prompt"}
+          </button>
+        </div>
+
+        <div className="p-3.5 rounded-lg bg-muted/30 border font-sans text-xs leading-relaxed text-foreground select-all">
+          {scenarioPrompt}
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-3 text-xs text-muted-foreground pt-2">
+          <div className="border rounded-lg p-3 space-y-1 bg-muted/10">
+            <span className="font-semibold text-foreground block">1. 本地阅读与识别</span>
+            Agent 利用多模态直接阅读 PDF 文档或截图标注，保留题干与选项中可能的 HTML 格式。
+          </div>
+          <div className="border rounded-lg p-3 space-y-1 bg-muted/10">
+            <span className="font-semibold text-foreground block">2. 标准格式清洗</span>
+            提取真实单题 ID、完整选项文本以防乱序，并自动分离已确认正确答案与排除错误项。
+          </div>
+          <div className="border rounded-lg p-3 space-y-1 bg-muted/10">
+            <span className="font-semibold text-foreground block">3. 工具一键上传</span>
+            Agent 调用 <code>upload_answers</code> 工具提交，平台自动执行三级匹配去重与答案更新。
+          </div>
+        </div>
       </div>
     </div>
   );

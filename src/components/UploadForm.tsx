@@ -1,59 +1,51 @@
 import { useState, type FormEvent } from "react";
 
-const EXAMPLE_JSON = `{
-  "tid": "12345",
-  "cid": "678",
-  "questions": [
-    {
-      "question_id": "q1",
-      "type": "single",
-      "stem": "以下哪个选项正确？",
-      "options": [
-        {"id": "A", "text": "选项A"},
-        {"id": "B", "text": "选项B"},
-        {"id": "C", "text": "选项C"},
-        {"id": "D", "text": "选项D"}
-      ],
-      "correct_answers": ["A"],
-      "wrong_answers": null
-    }
-  ]
-}`;
+const AI_PROMPT = `你是一个专业的 UOOC（优课联盟）题目数据清洗与录入专家。给定包含测试结果、测验解析的 PDF、截图或文本内容，请提取该测验/题组的所有题目与答案，整理为符合平台规范的 JSON 数据。
 
-const AI_PROMPT = `你是 UOOC 题目数据提取助手。给定包含测试结果的 PDF 或图片内容，请提取每道题目的以下信息：
+【提取与清洗规范】
+1. 基础信息：
+   - tid: UOOC 题组 ID（必填，如 "100234"）
+   - cid: UOOC 课程 ID（可选，如 "2048"）
+   - task_name: 题组/测验名称（可选，如 "第3章单元测验"）
+   - course_name: 课程名称（可选，如 "高等数学"）
 
-- question_id: 题目编号/ID
-- type: 题目类型 (single=单选, multiple=多选, judge=判断, text=填空)
-- stem: 题干文本 (保留 HTML 标签)
-- options: 选项列表 [{id: "A", text: "选项内容"}, ...] (选择题)
-- correct_answers: 正确答案 (如已标注) ["A"] 或 ["填空内容"]
-- wrong_answers: 已知错误答案 (如有) ["C", "D"]
+2. 题目识别：
+   - question_id: UOOC 题单真实单题 ID（优先提取对应 /exam/getTaskPaper 接口返回的真实数字 ID 如 "2057971114"；若解析文件中无真实单题 ID，请按题号提取为 "1", "2"）
+   - type: 题型，必须为 single (单选) / multiple (多选) / judge (判断) / text (填空) 之一
+   - stem: 完整题干内容（保留原始 HTML 标签及格式）
+   - options: 选项列表 [{"id": "A", "text": "选项完整文本"}, ...]。请务必完整保留选项文本内容，以便系统和客户端通过文本内容进行精确比对，防止作答时选项字母随机乱序打乱
+   - blanks: 填空题空数（填空题时填写，默认 0）
 
-请按以下 JSON 格式输出，按 tid (题组 ID) 分组：
+3. 答案识别：
+   - correct_answers: 已确认的标准正确答案数组，单选/判断如 ["A"] 或选项文本，多选如 ["A", "C"]，填空如 ["第一空答案", "第二空答案"]
+   - wrong_answers: 若题目尚未得知正确答案但已知某些选项错误，提取已排除的错误选项数组（如 ["B", "D"]）；若无已知错误选项设为 null
+   - 若答案完全未知，correct_answers 与 wrong_answers 均设为 null
 
+【JSON 输出格式】
 {
-  "tid": "题组ID",
-  "cid": "课程ID",
+  "tid": "100234",
+  "cid": "2048",
+  "task_name": "第3章单元测验",
+  "course_name": "高等数学",
   "questions": [
     {
-      "question_id": "题目ID",
+      "question_id": "2057971114",
       "type": "single",
-      "stem": "题干内容",
-      "options": [{"id": "A", "text": "选项A"}],
-      "correct_answers": ["A"],
+      "stem": "关于极限，下列说法正确的是？",
+      "options": [
+        {"id": "A", "text": "有界函数必有极限"},
+        {"id": "B", "text": "单调有界数列必有极限"}
+      ],
+      "correct_answers": ["B"],
       "wrong_answers": null
     }
   ]
 }
 
-注意：
-- 题干和选项中的 HTML 标签请保留
-- 如果无法确定正确答案，设为 null
-- 如果只知道某些选项是错的，放入 wrong_answers
-- question_id 和 type 是必填项`;
+请直接输出符合上述格式的合法 JSON，不要包含额外的 Markdown 代码块外壳或任何多余解释。`;
 
 export default function UploadForm() {
-  const [mode, setMode] = useState<"json" | "ai">("json");
+  const [mode, setMode] = useState<"json" | "ai">("ai");
   const [json, setJson] = useState("");
   const [status, setStatus] = useState<{
     type: "idle" | "loading" | "success" | "error";
@@ -116,17 +108,17 @@ export default function UploadForm() {
       <div className="flex gap-2">
         <button
           type="button"
-          onClick={() => setMode("json")}
-          className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${mode === "json" ? "bg-primary text-primary-foreground" : "bg-secondary text-secondary-foreground hover:bg-secondary/80"}`}
-        >
-          直接粘贴 JSON
-        </button>
-        <button
-          type="button"
           onClick={() => setMode("ai")}
           className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${mode === "ai" ? "bg-primary text-primary-foreground" : "bg-secondary text-secondary-foreground hover:bg-secondary/80"}`}
         >
           AI 辅助提取
+        </button>
+        <button
+          type="button"
+          onClick={() => setMode("json")}
+          className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${mode === "json" ? "bg-primary text-primary-foreground" : "bg-secondary text-secondary-foreground hover:bg-secondary/80"}`}
+        >
+          直接粘贴 JSON
         </button>
       </div>
 
@@ -134,12 +126,12 @@ export default function UploadForm() {
         <div className="rounded-lg border bg-muted/30 p-4 space-y-3">
           <h3 className="font-semibold text-sm">使用方法</h3>
           <ol className="text-sm text-muted-foreground space-y-1 list-decimal list-inside">
-            <li>复制下方提示词到你的 AI 对话工具 (ChatGPT, Claude 等)</li>
-            <li>发送包含答案的 PDF 或图片给 AI</li>
-            <li>将 AI 返回的 JSON 粘贴到下方文本框</li>
+            <li>复制下方提示词到你的 AI 对话工具 (ChatGPT, Claude, Cursor 等)</li>
+            <li>发送包含答案的 PDF、试卷截图或网页解析文本给 AI</li>
+            <li>将 AI 生成的标准 JSON 复制粘贴到下方输入框提交</li>
           </ol>
           <div className="relative">
-            <pre className="rounded border bg-background p-3 text-xs overflow-auto max-h-48 whitespace-pre-wrap">
+            <pre className="rounded border bg-background p-3 text-xs overflow-auto max-h-56 whitespace-pre-wrap font-sans">
               {AI_PROMPT}
             </pre>
             <button
@@ -157,13 +149,6 @@ export default function UploadForm() {
         <div>
           <div className="flex items-center justify-between mb-1">
             <label className="text-sm font-medium">JSON 数据</label>
-            <button
-              type="button"
-              onClick={() => setJson(EXAMPLE_JSON)}
-              className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-            >
-              填入示例
-            </button>
           </div>
           <textarea
             value={json}
@@ -173,7 +158,7 @@ export default function UploadForm() {
             }}
             rows={16}
             className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            placeholder="在此粘贴 JSON 数据..."
+            placeholder="在此粘贴清洗后的 JSON 数据..."
           />
         </div>
 

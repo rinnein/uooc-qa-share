@@ -7,6 +7,38 @@ interface Props {
 }
 
 const { title = "UOOC QA Share" } = Astro.props;
+const pathname = Astro.url.pathname;
+
+const navItems = [
+  {
+    href: "/",
+    label: "首页",
+    isActive: pathname === "/",
+  },
+  {
+    href: "/courses",
+    label: "课程题单",
+    isActive:
+      pathname === "/courses" ||
+      pathname.startsWith("/courses/") ||
+      pathname.startsWith("/tasks/"),
+  },
+  {
+    href: "/search",
+    label: "搜索",
+    isActive: pathname === "/search" || pathname.startsWith("/questions/"),
+  },
+  {
+    href: "/upload",
+    label: "上传",
+    isActive: pathname === "/upload" || pathname.startsWith("/upload/"),
+  },
+  {
+    href: "/mcp-guide",
+    label: "MCP / Agent",
+    isActive: pathname === "/mcp-guide" || pathname.startsWith("/mcp-guide/"),
+  },
+];
 ---
 
 <!doctype html>
@@ -52,13 +84,25 @@ const { title = "UOOC QA Share" } = Astro.props;
   <body class="min-h-screen bg-background font-sans antialiased">
     <header class="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur">
       <div class="mx-auto flex h-14 max-w-5xl items-center gap-4 px-4">
-        <a href="/" class="text-lg font-bold tracking-tight">UOOC QA</a>
-        <nav class="flex items-center gap-3 text-sm text-muted-foreground">
-          <a href="/search" class="hover:text-foreground transition-colors">搜索</a>
-          <a href="/upload" class="hover:text-foreground transition-colors">上传</a>
-          <a href="/mcp-guide" class="hover:text-foreground transition-colors">MCP / Agent</a>
+        <a href="/" class="text-lg font-bold tracking-tight shrink-0">UOOC QA</a>
+        <nav class="flex items-center gap-1 sm:gap-2 text-sm overflow-x-auto">
+          {
+            navItems.map((item) => (
+              <a
+                href={item.href}
+                class:list={[
+                  "px-2.5 py-1 rounded-md text-sm transition-colors whitespace-nowrap",
+                  item.isActive
+                    ? "bg-accent text-accent-foreground font-medium"
+                    : "text-muted-foreground hover:text-foreground hover:bg-accent/50",
+                ]}
+              >
+                {item.label}
+              </a>
+            ))
+          }
         </nav>
-        <div class="ml-auto">
+        <div class="ml-auto shrink-0">
           <NavbarAuth client:load />
         </div>
       </div>

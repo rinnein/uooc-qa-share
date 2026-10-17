@@ -1,6 +1,12 @@
 import { useState, useEffect } from "react";
 
-type TaskGroup = { tid: string; cid: string; name: string | null };
+type TaskGroup = {
+  tid: string;
+  cid: string;
+  name: string | null;
+  questionCount?: number;
+  answeredCount?: number;
+};
 type Course = { cid: string; name: string | null };
 
 export default function CourseView({ cid }: { cid: string }) {
@@ -28,24 +34,44 @@ export default function CourseView({ cid }: { cid: string }) {
 
   return (
     <div className="space-y-4">
-      <div className="space-y-1">
-        <h1 className="text-2xl font-bold">
-          课程 {cid}
-          {course?.name && (
-            <span className="text-muted-foreground font-normal"> — {course.name}</span>
-          )}
-        </h1>
-        <p className="text-sm text-muted-foreground">共 {groups.length} 个题组</p>
+      <div>
+        <a
+          href="/courses"
+          className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1 mb-2"
+        >
+          ← 返回课程题单列表
+        </a>
+        <div className="space-y-1">
+          <h1 className="text-2xl font-bold">
+            课程 {cid}
+            {course?.name && (
+              <span className="text-muted-foreground font-normal"> — {course.name}</span>
+            )}
+          </h1>
+          <p className="text-sm text-muted-foreground">共 {groups.length} 个题组</p>
+        </div>
       </div>
       <div className="space-y-2">
         {groups.map((g) => (
           <a
             key={g.tid}
             href={`/tasks/${g.tid}`}
-            className="block rounded-lg border p-3 hover:bg-accent/50 transition-colors"
+            className="flex items-center justify-between rounded-lg border p-3 hover:bg-accent/50 transition-colors"
           >
-            <span className="font-medium">题组 {g.tid}</span>
-            {g.name && <span className="ml-2 text-muted-foreground">{g.name}</span>}
+            <div>
+              <span className="font-medium">题组 {g.tid}</span>
+              {g.name && <span className="ml-2 text-muted-foreground">{g.name}</span>}
+            </div>
+            {typeof g.questionCount === "number" && (
+              <div className="text-xs text-muted-foreground flex items-center gap-3">
+                <span>共 {g.questionCount} 题</span>
+                {typeof g.answeredCount === "number" && g.answeredCount > 0 && (
+                  <span className="text-green-600 dark:text-green-400">
+                    已录答案 {g.answeredCount} 题
+                  </span>
+                )}
+              </div>
+            )}
           </a>
         ))}
         {groups.length === 0 && <p className="text-muted-foreground text-sm">该课程暂无题组数据</p>}
