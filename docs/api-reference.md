@@ -165,7 +165,7 @@
   "course_name": "高等数学",
   "questions": [
     {
-      "question_id": "q1",
+      "question_id": "2057971114",
       "type": "single",
       "stem": "以下哪个正确？",
       "options": [
@@ -173,14 +173,14 @@
         { "id": "B", "text": "选项B" }
       ],
       "embedding": [0.0123, 0.0456, 0.0789],
-      "correct_answers": ["A"],
+      "correct_answers": ["选项A"],
       "wrong_answers": null
     },
     {
-      "question_id": "q2",
+      "question_id": "1486355087",
       "type": "multiple",
       "correct_answers": null,
-      "wrong_answers": ["C", "D"]
+      "wrong_answers": ["选项C", "选项D"]
     }
   ]
 }
@@ -188,22 +188,22 @@
 
 **字段说明:**
 
-| 字段                          | 必填 | 说明                                     |
-| ----------------------------- | ---- | ---------------------------------------- |
-| `tid`                         | ✅   | UOOC 题组 ID                             |
-| `cid`                         | ❌   | 课程 ID，未提供时使用 tid 作为占位       |
-| `questions[].question_id`     | ✅   | UOOC 题目标识符                          |
-| `questions[].type`            | ✅   | `single` / `multiple` / `judge` / `text` |
-| `questions[].stem`            | ❌   | 题干文本（可含 HTML）                    |
-| `questions[].embedding`       | ❌   | 插件生成的 1536 维题干词向量             |
-| `questions[].options`         | ❌   | 选项列表 `[{id, text}]`                  |
-| `questions[].correct_answers` | ❌   | 正确答案值数组                           |
-| `questions[].wrong_answers`   | ❌   | 已排除的错误答案值数组                   |
+| 字段                          | 必填 | 说明                                                                                             |
+| ----------------------------- | ---- | ------------------------------------------------------------------------------------------------ |
+| `tid`                         | ✅   | UOOC 题组 ID                                                                                     |
+| `cid`                         | ❌   | 课程 ID，未提供时使用 tid 作为占位                                                               |
+| `questions[].question_id`     | ✅   | UOOC 题单真实单题 ID（对应 `/exam/getTaskPaper` 的 `data.questions[].id`，需临时保存草稿后拉取） |
+| `questions[].type`            | ✅   | `single` / `multiple` / `judge` / `text`                                                         |
+| `questions[].stem`            | ❌   | 题干文本（可含 HTML）                                                                            |
+| `questions[].embedding`       | ❌   | 插件生成的 1536 维题干词向量                                                                     |
+| `questions[].options`         | ❌   | 选项列表 `[{id, text}]`                                                                          |
+| `questions[].correct_answers` | ❌   | 正确答案值数组（推荐存放选项文本内容，以便客户端对冲选项乱序）                                   |
+| `questions[].wrong_answers`   | ❌   | 已排除的错误答案值数组                                                                           |
 
 **处理逻辑:**
 
 1. 自动创建不存在的课程和题组
-2. 按 `(tid, question_id)` 匹配题目，回退到 `stem_hash` 匹配
+2. 按 `(tid, question_id)` 匹配题目（以真实单题 ID 优先），回退到 `stem_hash` 与向量语义匹配
 3. 提供 `correct_answers` 时：
    - 创建/更新正确答案
    - 删除该题已有的错误答案排除记录
@@ -221,8 +221,8 @@
 {
   "ok": true,
   "results": [
-    { "question_id": "q1", "action": "added_correct", "internal_id": 1 },
-    { "question_id": "q2", "action": "added_wrong", "internal_id": 2 }
+    { "question_id": "2057971114", "action": "added_correct", "internal_id": 1 },
+    { "question_id": "1486355087", "action": "added_wrong", "internal_id": 2 }
   ]
 }
 ```

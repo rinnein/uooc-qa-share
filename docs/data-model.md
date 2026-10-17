@@ -50,24 +50,26 @@
 
 ### 2.3 题目表 (`questions`)
 
-| 字段             | 类型           | 约束                              | 说明                                                      |
-| ---------------- | -------------- | --------------------------------- | --------------------------------------------------------- |
-| `id`             | `serial`       | PRIMARY KEY                       | 内部自增主键                                              |
-| `tid`            | `text`         | NOT NULL, FK → `task_groups(tid)` | 所属题组                                                  |
-| `question_id`    | `text`         | NULLABLE                          | UOOC 页面 DOM 或试卷接口中的题目标识符                    |
-| `type`           | `text`         | NOT NULL                          | 题型：`single` / `multiple` / `judge` / `text`            |
-| `stem`           | `text`         | NULLABLE                          | 题干内容（可包含原始 HTML 标签）                          |
-| `stem_hash`      | `text`         | NULLABLE, INDEX                   | 规范化题干哈希（去除 HTML、折叠空格、全小写后求 SHA-256） |
-| `stem_embedding` | `vector(1536)` | NULLABLE                          | 词向量（用于语义相似度搜索与未配对匹配）                  |
-| `options`        | `jsonb`        | NULLABLE                          | 选项列表 `[{"id": "A", "text": "..."}]`                   |
-| `blanks`         | `integer`      | NOT NULL, DEFAULT 0               | 填空题空数                                                |
-| `created_at`     | `timestamp`    | NOT NULL                          | 创建时间                                                  |
-| `updated_at`     | `timestamp`    | NOT NULL                          | 更新时间                                                  |
+| 字段             | 类型           | 约束                              | 说明                                                                               |
+| ---------------- | -------------- | --------------------------------- | ---------------------------------------------------------------------------------- |
+| `id`             | `serial`       | PRIMARY KEY                       | 内部自增主键                                                                       |
+| `tid`            | `text`         | NOT NULL, FK → `task_groups(tid)` | 所属题组编号                                                                       |
+| `question_id`    | `text`         | NOT NULL                          | UOOC 题单真实题目 ID（对应 `/exam/getTaskPaper` 接口返回的 `data.questions[].id`） |
+| `type`           | `text`         | NOT NULL                          | 题型：`single` / `multiple` / `judge` / `text`                                     |
+| `stem`           | `text`         | NULLABLE                          | 题干内容（可包含原始 HTML 标签）                                                   |
+| `stem_hash`      | `text`         | NULLABLE, INDEX                   | 规范化题干哈希（去除 HTML、折叠空格、全小写后求 SHA-256）                          |
+| `stem_embedding` | `vector(1536)` | NULLABLE                          | 词向量（用于语义相似度搜索与未配对匹配）                                           |
+| `options`        | `jsonb`        | NULLABLE                          | 选项列表 `[{"id": "A", "text": "..."}]`                                            |
+| `blanks`         | `integer`      | NOT NULL, DEFAULT 0               | 填空题空数                                                                         |
+| `created_at`     | `timestamp`    | NOT NULL                          | 创建时间                                                                           |
+| `updated_at`     | `timestamp`    | NOT NULL                          | 更新时间                                                                           |
 
-**重要约束**：
+**重要约束与实现规范**：
 
-- `(tid, question_id)` 建立唯一索引，保证同一题组内 UOOC 题目唯一。
-- 题目创建时，`stem` 和 `options` 为**可选富化项**。即使交卷阶段只抓到题目 ID 与答案，依然可以独立落库。
+- `(tid, question_id)` 建立唯一索引，保证同一题组内真实单题 ID 唯一；同时在 `question_id` 建立独立索引加速单题检索。
+- **单题真实 ID 规范**：`question_id` 必须存储 UOOC 题单在服务端维度的真实单题 ID（即 `data.questions[].id`），严禁使用临时 DOM 序列号或带有随机偏移的前端编号。
+- **临时保存获取无混淆题单**：UOOC 页面在直接渲染时可能存在题序或选项顺序混淆。集成端应先执行一次任意试卷答案的临时保存（提交草稿），再调用 `GET https://www.uooc.net.cn/exam/getTaskPaper?tid={tid}` 获取服务端下发的无混淆标准题单（含 `data.questions[].id` 与当前已选项）。
+- **文本比对机制**：选项的字母标签（A/B/C/D）可能在不同作答批次或不同账号间随机打乱。集成端必须结合题干与选项实际文本内容（`options` 的 `text` 或 `options_app` 的 `value`）进行精确比对，通过答案内容反查当前页面的实际选项字母，严禁仅凭字母下标硬编码勾选。
 
 ### 2.4 答案记录表 (`answers`)
 

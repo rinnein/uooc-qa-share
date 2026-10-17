@@ -156,10 +156,10 @@ Agent 可直接调用 Prompt: `analyze_and_upload_qa`，传入参数：
 
 【提取与清洗要求】
 1. 题目识别：
-   - 提取每道题的 question_id（若无显式 ID，使用序号如 "1", "2"）。
+   - 提取每道题真实单题的 question_id（优先使用 UOOC 题单接口 /exam/getTaskPaper 返回的真实单题数字 ID；若无显式 ID，使用序号如 "1", "2"）。
    - 判断题型 type: single (单选) / multiple (多选) / judge (判断) / text (填空)。
    - 题干 stem: 尽可能提取完整题干，若包含 HTML 标签请保留。
-   - 选项 options: 对单选题/多选题/判断题，提取选项列表 [{ id: "A", text: "..." }, ...]。
+   - 选项 options: 对单选题/多选题/判断题，提取选项列表 [{ id: "A", text: "..." }, ...]。必要时记录选项文本，便于客户端做文本比对防选项乱序。
 2. 答案识别：
    - 若题目已确认正确答案，提取为 correct_answers（单选/判断如 ["A"]，多选如 ["A","C"]，填空如 ["第1空","第2空"]）。
    - 若题目无正确答案但已知某些选项错误，提取为 wrong_answers（如 ["B","D"]）。

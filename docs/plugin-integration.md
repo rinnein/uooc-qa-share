@@ -326,16 +326,70 @@ Content-Type: application/json
 
 ---
 
-## 4. 答题后数据回传流程
+## 4. 试卷无混淆题单获取、单题 ID 规范与答案上报
 
-### 4.1 上传接口格式规范
+### 4.1 核心机制：临时保存以刷新无混淆题单
 
-通过 `POST /api/upload/batch` 上传。支持批量打包一个题组内的所有题目：
+UOOC 平台在向前端渲染试卷时，可能开启了防作弊机制，导致页面 DOM 中的**题目顺序**以及选择题的**选项顺序 (A/B/C/D)** 出现随机打乱。
+
+为了确保题库精准匹配与答案互通，集成端**必须遵循以下标准接入流程**：
+
+```
+                    ┌────────────────────────────┐
+                    │ 1. 打开试卷页面 (tid)        │
+                    └─────────────┬──────────────┘
+                                  │
+                                  ▼
+                    ┌────────────────────────────┐
+                    │ 2. 临时保存一次试卷答案     │ (仅保存草稿，不触发交卷判题)
+                    └─────────────┬──────────────┘
+                                  │
+                                  ▼
+                    ┌────────────────────────────┐
+                    │ 3. 请求 /exam/getTaskPaper │ (获取服务端真实标准题单)
+                    └─────────────┬──────────────┘
+                                  │
+         ┌────────────────────────┴────────────────────────┐
+         ▼                                                 ▼
+【单题真实 ID 提取】                                【文本比对与选项映射】
+提取 data.questions[].id                            对题目与选项执行文本比对
+作为 question_id 上报/查询                          依据答案内容反查当前选项字母
+```
+
+1. **临时保存刷新题单**：
+   在做题或抓题前，集成端应当先执行一次**任意试卷答案的临时保存**（例如将当前勾选草稿同步至服务端，不提交试卷判题）。
+2. **拉取真实结构化题单**：
+   携带用户当前的登录态 Cookie，调用官方接口：
+
+   ```http
+   GET https://www.uooc.net.cn/exam/getTaskPaper?tid={tid}
+   ```
+
+   该接口会返回无混淆的标准题单 JSON，数据包含在 `data.questions[]` 中：
+   - `id`: 服务端全局唯一单题 ID（例如 `2057971114`），**`uooc-qa-share` 服务端强制要求使用此 ID 作为单题的 `question_id`**。
+   - `type`: 题型映射（`"10"` -> `single`，`"11"` -> `multiple`，`"20"` -> `judge`，`"30"`/其他 -> `text`）。
+   - `question`: 纯净题干文本（未包含前端生成的“1.”、“【单选题】”等前缀杂质）。
+   - `options_app`: 规范的选项列表 `[{ key: "A", value: "..." }, ...]`。
+   - `student_answer`: 用户当前保存的已选项列表。
+   - `answer`: 官方标准答案（若试卷已批改或当前状态允许查看答案时直接返回）。
+   - `tips`: 试题权威解析。
+
+3. **文本比对机制（防题目与选项乱序）**：
+   - 即使同一道题目（相同的 `question_id`），在不同作答批次中选项的 `A/B/C/D` 顺序可能被服务端重新打乱。
+   - **必要时应当进行文本比对**：
+     - **题干核验**：通过去除题号、题目类型标签后的纯文本核对题意是否完全一致；
+     - **选项内容匹配**：题库中记录的标准答案应当比对**选项文本内容**（例如 `"ALphaGo围棋比赛大获全胜"` 而不是单纯记录 `"C"`）；
+     - **反查选项按键**：遍历当前题目 `options_app`，寻找 `value` 与题库正确答案一致的选项项，取得其当前的 `key`（如当前的 `"C"`），再执行点击或勾选，杜绝选项错位导致的答错。
+
+### 4.2 批量上报格式规范 (`POST /api/upload/batch`)
+
+测验完成后，将解析出的真实单题 ID、题型、题干、选项与答案批量上传：
 
 ```http
 POST /api/upload/batch
 Content-Type: application/json
 Authorization: Bearer <token> (可选)
+x-api-key: uooc_... (可选)
 
 {
   "tid": "100234",
@@ -344,29 +398,31 @@ Authorization: Bearer <token> (可选)
   "course_name": "高等数学",
   "questions": [
     {
-      "question_id": "q_100234_1",
+      "question_id": "2057971114",
       "type": "single",
-      "stem": "关于微积分基本定理，下列说法正确的是？",
+      "stem": "人工智能发展的第三次高潮期的典型代表是（   ）。",
       "options": [
-        { "id": "A", "text": "连续函数一定可积" },
-        { "id": "B", "text": "可积函数一定连续" }
+        { "id": "A", "text": "“知识工程”概念的提出" },
+        { "id": "B", "text": "美国达特茅斯学院“侃谈会”的举办" },
+        { "id": "C", "text": "ALphaGo围棋比赛大获全胜" },
+        { "id": "D", "text": "国际互联网技术的发展" }
       ],
       "embedding": [0.0123, 0.0456, 0.0789],
-      "correct_answers": ["A"],
+      "correct_answers": ["ALphaGo围棋比赛大获全胜"],
       "wrong_answers": null
     },
     {
-      "question_id": "q_100234_2",
+      "question_id": "1486355087",
       "type": "single",
-      "stem": "若 f(x) 在区间 [a, b] 上连续...",
+      "stem": "中国人工智能领域市场规模最大的是（   ）。",
       "options": [
-        { "id": "A", "text": "选项A" },
-        { "id": "B", "text": "选项B" },
-        { "id": "C", "text": "选项C" },
-        { "id": "D", "text": "选项D" }
+        { "id": "A", "text": "自然语言处理" },
+        { "id": "B", "text": "计算机视觉" },
+        { "id": "C", "text": "语音识别" },
+        { "id": "D", "text": "智能硬件" }
       ],
       "correct_answers": null,
-      "wrong_answers": ["C", "D"]
+      "wrong_answers": ["自然语言处理", "语音识别"]
     }
   ]
 }
@@ -374,21 +430,27 @@ Authorization: Bearer <token> (可选)
 
 > **注意**：
 >
-> - 题干 `stem` 与 `options` 为可选字段。如果交卷时未解析完整题干，仅提供 `question_id`、`type` 与 `correct_answers` / `wrong_answers` 同样有效。
+> - `question_id` 必须传 UOOC 题单中的真实单题数字 ID（字符串格式），服务端 `questions` 表已建立 `(tid, question_id)` 唯一索引进行约束。
+> - 选项与正确答案建议同时包含文本内容，便于客户端通过**文本比对**对冲选项随机打乱风险。
 > - `embedding` 为可选字段，必须是与服务端 `vector(1536)` 兼容的 1536 维数字数组。插件已生成词向量时，建议随题目一并上传；服务端优先使用该向量。
 > - 未提供 `embedding` 时，服务端仅在配置 `EMBEDDING_API_URL` 与 `EMBEDDING_API_KEY` 后才调用模型生成；未配置时不会发起模型请求，继续使用文本匹配回退。
 > - 一旦某题目成功录入 `correct_answers`，服务端会自动清理该题目之前存储的全部错误答案排除记录。
 > - 如果同一道题目已有正确答案，匿名用户上传会被忽略（`denied_anonymous_overwrite`），通过 OAuth 登录的用户则可直接更新覆盖。
 
-### 4.2 从 UOOC 官方接口获取提交后标准答案
+### 4.3 从 UOOC 官方接口获取提交后标准答案
 
-UOOC 测验交卷后，访问以下 URL 可直接获取标准答案与解析：
+UOOC 测验交卷后，可通过以下两种方式直接获取标准答案与解析：
 
-```
-GET https://www.uooc.net.cn/exam/view?cid={cid}&tid={tid}
-```
-
-该页面或接口返回的数据中包含了官方的标准答案。插件在交卷成功后请求此接口，即可一次性获得该测验全部题目的 100% 正确答案，直接调用 `/api/upload/batch` 上传题库。
+1. **直接请求无混淆题单接口**：
+   ```
+   GET https://www.uooc.net.cn/exam/getTaskPaper?tid={tid}
+   ```
+   在已交卷状态下，该接口通常会直接在 `data.questions[].answer` 与 `data.questions[].tips` 中包含官方标准答案及解析。
+2. **请求已完成试卷视图接口**：
+   ```
+   GET https://www.uooc.net.cn/exam/view?cid={cid}&tid={tid}
+   ```
+   该接口返回已判分试卷的完整数据或视图，解析出题目与标准答案后即可调用 `/api/upload/batch` 上传题库。
 
 ---
 
@@ -542,48 +604,100 @@ module.exports = { fetchTaskAnswers, uploadTaskResults, ensureApiKey, addEmbeddi
 
 ### 6.2 在 `utils/quiz.js` 中接入
 
-在 `processQuizQuestions` 执行前查询题库：
+在 `processQuizQuestions` 中执行前，先通过临时保存与 `getTaskPaper` 刷新无混淆题单并做文本比对：
 
 ```javascript
 const { fetchTaskAnswers, uploadTaskResults, addEmbeddings } = require("./qa-client");
 
-// 1. 做题前查询已知答案
+// 1. 临时保存一次试卷并获取官方无混淆真实题单
+// 先点击/保存一次草稿，确保服务端刷新题目与选项映射
+await page.evaluate(() => {
+  const saveBtn = document.querySelector('button:has-text("保存"), .btn-save');
+  if (saveBtn) saveBtn.click();
+});
+await page.waitForTimeout(1000);
+
+// 请求 getTaskPaper 获取真实单题列表
+const taskPaperRes = await page.evaluate(async (t) => {
+  const resp = await fetch(`/exam/getTaskPaper?tid=${t}`);
+  return await resp.json();
+}, tid);
+const officialQuestions = taskPaperRes?.data?.questions || [];
+
+// 2. 从题库服务查询已知答案
 const knownQuestions = await fetchTaskAnswers(tid, courseId);
 const knownMap = new Map();
 if (knownQuestions) {
   for (const kq of knownQuestions) {
     const correct = kq.answers?.find((a) => a.isCorrect);
     const wrongs = kq.answers?.filter((a) => !a.isCorrect).flatMap((a) => a.values) || [];
-    knownMap.set(kq.questionId || kq.stem, { correct: correct?.values, wrongs });
+    // 以真实单题 ID 作为主键检索
+    knownMap.set(String(kq.questionId), { correct: correct?.values, wrongs, stem: kq.stem });
   }
 }
 
-// 2. 遍历页面题目时决断
-for (const q of questions) {
-  const qName = await q.evaluate((el) => el.querySelector("input")?.name || "");
-  const qInfo = knownMap.get(qName);
+// 3. 遍历官方真实题目进行比对与作答
+for (let i = 0; i < officialQuestions.length; i++) {
+  const oq = officialQuestions[i];
+  const qIdStr = String(oq.id);
+  const qInfo = knownMap.get(qIdStr);
+  const domQuestion = questions[i]; // 对应 DOM 节点
 
   if (qInfo?.correct && qInfo.correct.length > 0) {
-    log(`🎯 [题库命中] 题目 ${qName} 直接使用题库答案: ${qInfo.correct.join(", ")}`);
-    await clickAnswers(q, qInfo.correct, log);
+    // 文本比对：根据答案文本内容反查当前试卷中被打乱的选项 key (A/B/C/D)
+    const targetKeys = [];
+    const optionsApp = oq.options_app || [];
+
+    for (const ansText of qInfo.correct) {
+      // 在当前题目的选项中通过文本完全匹配或包含匹配查找当前 key
+      const matchedOpt = optionsApp.find(
+        (opt) =>
+          opt.value.trim() === ansText.trim() ||
+          opt.value.replace(/\s+/g, "").includes(ansText.replace(/\s+/g, "")),
+      );
+      if (matchedOpt) {
+        targetKeys.push(matchedOpt.key);
+      } else {
+        // 若直接存储的是字母且无需重映射，则回退为字母本身
+        targetKeys.push(ansText);
+      }
+    }
+
+    log(`🎯 [题库命中] 单题ID ${qIdStr} 文本比对成功，勾选当前选项: ${targetKeys.join(", ")}`);
+    await clickAnswers(domQuestion, targetKeys, log);
     continue;
   }
 
   if (qInfo?.wrongs && qInfo.wrongs.length > 0) {
-    log(`✂️ [题库剪枝] 题目 ${qName} 排除已知错误选项: ${qInfo.wrongs.join(", ")}`);
-    // 在暴力遍历或大模型识别时排除这些选项
+    log(`✂️ [题库剪枝] 单题ID ${qIdStr} 排除已知错误选项: ${qInfo.wrongs.join(", ")}`);
+    // 在大模型识别或暴力穷举中排除这些选项文本
   }
 
   // 走原有大模型截图作答流程...
 }
 
-// 3. 提交通过后上报答案
+// 4. 提交通过后以真实单题 ID 上报答案
 if (quizPassed) {
+  const recordedList = officialQuestions.map((oq) => ({
+    question_id: String(oq.id),
+    type:
+      oq.type === "10"
+        ? "single"
+        : oq.type === "11"
+          ? "multiple"
+          : oq.type === "20"
+            ? "judge"
+            : "text",
+    stem: oq.question,
+    options: (oq.options_app || []).map((o) => ({ id: o.key, text: o.value })),
+    correct_answers: Array.isArray(oq.answer) ? oq.answer : [oq.answer],
+  }));
+
   await uploadTaskResults({
     tid,
     cid: courseId,
     // pluginEmbedding 是插件选择的词向量生成器；每个返回值必须是 1536 维数组。
-    questions: await addEmbeddings(recordedAnswersList, pluginEmbedding),
+    questions: await addEmbeddings(recordedList, pluginEmbedding),
   });
 }
 ```

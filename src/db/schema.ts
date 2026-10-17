@@ -50,7 +50,8 @@ export const questions = pgTable(
     tid: text("tid")
       .notNull()
       .references(() => taskGroups.tid, { onDelete: "cascade" }),
-    questionId: text("question_id"),
+    // UOOC 题单中的真实单题 ID (对应 /exam/getTaskPaper 接口返回的 data.questions[].id)
+    questionId: text("question_id").notNull(),
     type: text("type").notNull(), // 'single' | 'multiple' | 'judge' | 'text'
     stem: text("stem"),
     stemHash: text("stem_hash"),
@@ -63,6 +64,7 @@ export const questions = pgTable(
   (t) => [
     index("questions_tid_idx").on(t.tid),
     index("questions_stem_hash_idx").on(t.stemHash),
+    index("questions_question_id_idx").on(t.questionId),
     unique("questions_tid_qid_uniq").on(t.tid, t.questionId),
   ],
 );
