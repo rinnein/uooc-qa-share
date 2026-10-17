@@ -66,65 +66,80 @@ export const tasksRoutes = new Elysia()
     { params: t.Object({ tid: t.String() }) },
   )
 
-  // Get all courses with task groups and statistics
-  .get("/courses", async () => {
-    const allCourses = await db.query.courses.findMany({
-      orderBy: (c, { desc }) => [desc(c.updatedAt)],
-    });
+  // Get all courses with task groups and statistics (supports pagination & search)
+  .get(
+    "/courses",
+    async ({ query }) => {
+      const page = Math.max(1, query.page ? Number.parseInt(query.page, 10) || 1 : 1);
+      const pageSize = Math.min(
+        50,
+        Math.max(
+          1,
+          query.pageSize
+            ? Number.parseInt(query.pageSize, 10) || 10
+            : query.limit
+              ? Number.parseInt(query.limit, 10) || 10
+              : 10,
+        ),
+      );
+      const q = query.q?.trim()?.toLowerCase();
 
-    const allTaskGroups = await db.query.taskGroups.findMany({
-      orderBy: (t, { desc }) => [desc(t.updatedAt)],
-    });
-
-    const questionCounts = await db
-      .select({
-        tid: questions.tid,
-        count: sql<number>`count(*)`,
-      })
-      .from(questions)
-      .groupBy(questions.tid);
-
-    const answeredCounts = await db
-      .select({
-        tid: questions.tid,
-        count: sql<number>`count(distinct ${questions.id})`,
-      })
-      .from(questions)
-      .innerJoin(answers, eq(questions.id, answers.questionId))
-      .where(eq(answers.isCorrect, true))
-      .groupBy(questions.tid);
-
-    const qMap = new Map<string, number>();
-    for (const row of questionCounts) qMap.set(row.tid, Number(row.count));
-
-    const aMap = new Map<string, number>();
-    for (const row of answeredCounts) aMap.set(row.tid, Number(row.count));
-
-    const groupsByCid = new Map<
-      string,
-      Array<{
-        tid: string;
-        cid: string;
-        name: string | null;
-        questionCount: number;
-        answeredCount: number;
-      }>
-    >();
-
-    for (const g of allTaskGroups) {
-      const list = groupsByCid.get(g.cid) ?? [];
-      list.push({
-        tid: g.tid,
-        cid: g.cid,
-        name: g.name,
-        questionCount: qMap.get(g.tid) ?? 0,
-        answeredCount: aMap.get(g.tid) ?? 0,
+      const allCourses = await db.query.courses.findMany({
+        orderBy: (c, { desc }) => [desc(c.updatedAt)],
       });
-      groupsByCid.set(g.cid, list);
-    }
 
-    return {
-      courses: allCourses.map((c) => {
+      const allTaskGroups = await db.query.taskGroups.findMany({
+        orderBy: (t, { desc }) => [desc(t.updatedAt)],
+      });
+
+      const questionCounts = await db
+        .select({
+          tid: questions.tid,
+          count: sql<number>`count(*)`,
+        })
+        .from(questions)
+        .groupBy(questions.tid);
+
+      const answeredCounts = await db
+        .select({
+          tid: questions.tid,
+          count: sql<number>`count(distinct ${questions.id})`,
+        })
+        .from(questions)
+        .innerJoin(answers, eq(questions.id, answers.questionId))
+        .where(eq(answers.isCorrect, true))
+        .groupBy(questions.tid);
+
+      const qMap = new Map<string, number>();
+      for (const row of questionCounts) qMap.set(row.tid, Number(row.count));
+
+      const aMap = new Map<string, number>();
+      for (const row of answeredCounts) aMap.set(row.tid, Number(row.count));
+
+      const groupsByCid = new Map<
+        string,
+        Array<{
+          tid: string;
+          cid: string;
+          name: string | null;
+          questionCount: number;
+          answeredCount: number;
+        }>
+      >();
+
+      for (const g of allTaskGroups) {
+        const list = groupsByCid.get(g.cid) ?? [];
+        list.push({
+          tid: g.tid,
+          cid: g.cid,
+          name: g.name,
+          questionCount: qMap.get(g.tid) ?? 0,
+          answeredCount: aMap.get(g.tid) ?? 0,
+        });
+        groupsByCid.set(g.cid, list);
+      }
+
+      const mappedCourses = allCourses.map((c) => {
         const tGroups = groupsByCid.get(c.cid) ?? [];
         return {
           cid: c.cid,
@@ -135,9 +150,46 @@ export const tasksRoutes = new Elysia()
           totalQuestions: tGroups.reduce((acc, g) => acc + g.questionCount, 0),
           totalAnswered: tGroups.reduce((acc, g) => acc + g.answeredCount, 0),
         };
+      });
+
+      // Filter by q if provided
+      const filteredCourses = q
+        ? mappedCourses.filter((c) => {
+            const matchCid = c.cid.toLowerCase().includes(q);
+            const matchName = c.name?.toLowerCase().includes(q) ?? false;
+            const matchTask = c.taskGroups.some(
+              (t) =>
+                t.tid.toLowerCase().includes(q) || (t.name?.toLowerCase().includes(q) ?? false),
+            );
+            return matchCid || matchName || matchTask;
+          })
+        : mappedCourses;
+
+      const total = filteredCourses.length;
+      const totalPages = Math.max(1, Math.ceil(total / pageSize));
+      const offset = (page - 1) * pageSize;
+      const paginatedCourses = filteredCourses.slice(offset, offset + pageSize);
+
+      return {
+        courses: paginatedCourses,
+        total,
+        page,
+        pageSize,
+        totalPages,
+        allCoursesCount: allCourses.length,
+        allTaskGroupsCount: allTaskGroups.length,
+        allQuestionsCount: Array.from(qMap.values()).reduce((a, b) => a + b, 0),
+      };
+    },
+    {
+      query: t.Object({
+        q: t.Optional(t.String()),
+        page: t.Optional(t.String()),
+        pageSize: t.Optional(t.String()),
+        limit: t.Optional(t.String()),
       }),
-    };
-  })
+    },
+  )
 
   // Get all task groups under a course
   .get(

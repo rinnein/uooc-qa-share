@@ -1,8 +1,11 @@
 ---
 import Layout from "@/layouts/Layout.astro";
 import CoursesListView from "@/components/CoursesListView";
+
+const q = Astro.url.searchParams.get("q") ?? "";
+const page = Number(Astro.url.searchParams.get("page") ?? "1");
 ---
 
 <Layout title="课程题单 - UOOC QA Share">
-  <CoursesListView client:load />
+  <CoursesListView initialQuery={q} initialPage={page} client:load />
 </Layout>

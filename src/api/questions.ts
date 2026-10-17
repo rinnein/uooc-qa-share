@@ -10,10 +10,13 @@ export async function searchQuestionsInternal(options: {
   exact?: string | boolean;
   embedding?: number[];
   limit?: number;
+  page?: number;
 }) {
   const q = options.q?.trim();
   const exact = options.exact === "1" || options.exact === true;
-  const limit = options.limit && options.limit > 0 ? Math.min(options.limit, 50) : 50;
+  const page = Math.max(1, options.page ?? 1);
+  const limit = options.limit && options.limit > 0 ? Math.min(options.limit, 50) : 20;
+  const offset = (page - 1) * limit;
 
   // 1. If exact mode and q is provided, search by stem_hash
   if (exact && q) {
@@ -21,8 +24,25 @@ export async function searchQuestionsInternal(options: {
     const results = await db.query.questions.findMany({
       where: eq(questions.stemHash, hash),
       limit,
+      offset,
     });
-    return { results };
+    let total = results.length;
+    if (typeof (db as any).select === "function") {
+      try {
+        const [c] = await db
+          .select({ count: sql<number>`count(*)` })
+          .from(questions)
+          .where(eq(questions.stemHash, hash));
+        if (c) total = Number(c.count);
+      } catch {}
+    }
+    return {
+      results,
+      total,
+      page,
+      pageSize: limit,
+      totalPages: Math.max(1, Math.ceil(total / limit)),
+    };
   }
 
   // 2. Vector search: prefer client-provided vector if valid; otherwise generate server-side if q is provided
@@ -35,14 +55,26 @@ export async function searchQuestionsInternal(options: {
 
   if (embedding) {
     const vectorStr = `[${embedding.join(",")}]`;
-    const results = await db.execute(sql`
-      SELECT q.*, 1 - (q.stem_embedding <=> ${vectorStr}::vector) AS similarity
+    const rawResults = await db.execute(sql`
+      SELECT q.*, 1 - (q.stem_embedding <=> ${vectorStr}::vector) AS similarity,
+             count(*) OVER() AS total_count
       FROM questions q
       WHERE q.stem_embedding IS NOT NULL
       ORDER BY q.stem_embedding <=> ${vectorStr}::vector
-      LIMIT ${Math.min(limit, 20)}
+      LIMIT ${limit}
+      OFFSET ${offset}
     `);
-    return { results };
+    const rows = (rawResults as any[]) ?? [];
+    const total =
+      rows.length > 0 && rows[0].total_count != null ? Number(rows[0].total_count) : rows.length;
+    const results = rows.map(({ total_count: _total_count, ...rest }) => rest);
+    return {
+      results,
+      total,
+      page,
+      pageSize: limit,
+      totalPages: Math.max(1, Math.ceil(total / limit)),
+    };
   }
 
   // 3. Fallback: ILIKE search on stem text
@@ -50,11 +82,28 @@ export async function searchQuestionsInternal(options: {
     const results = await db.query.questions.findMany({
       where: sql`${questions.stem} ILIKE ${"%" + q + "%"}`,
       limit,
+      offset,
     });
-    return { results };
+    let total = results.length;
+    if (typeof (db as any).select === "function") {
+      try {
+        const [c] = await db
+          .select({ count: sql<number>`count(*)` })
+          .from(questions)
+          .where(sql`${questions.stem} ILIKE ${"%" + q + "%"}`);
+        if (c) total = Number(c.count);
+      } catch {}
+    }
+    return {
+      results,
+      total,
+      page,
+      pageSize: limit,
+      totalPages: Math.max(1, Math.ceil(total / limit)),
+    };
   }
 
-  return { results: [] };
+  return { results: [], total: 0, page, pageSize: limit, totalPages: 1 };
 }
 
 export const questionsRoutes = new Elysia({ prefix: "/questions" })
@@ -158,11 +207,13 @@ export const questionsRoutes = new Elysia({ prefix: "/questions" })
       }
 
       const limit = query.limit ? Number.parseInt(query.limit, 10) : undefined;
+      const page = query.page ? Number.parseInt(query.page, 10) : undefined;
       return searchQuestionsInternal({
         q: query.q,
         exact: query.exact,
         embedding,
         limit: Number.isNaN(limit) ? undefined : limit,
+        page: Number.isNaN(page) ? undefined : page,
       });
     },
     {
@@ -171,6 +222,7 @@ export const questionsRoutes = new Elysia({ prefix: "/questions" })
         exact: t.Optional(t.String()),
         embedding: t.Optional(t.String()),
         limit: t.Optional(t.String()),
+        page: t.Optional(t.String()),
       }),
     },
   )
@@ -184,6 +236,7 @@ export const questionsRoutes = new Elysia({ prefix: "/questions" })
         exact: body.exact,
         embedding: body.embedding,
         limit: body.limit,
+        page: body.page,
       });
     },
     {
@@ -197,6 +250,7 @@ export const questionsRoutes = new Elysia({ prefix: "/questions" })
           }),
         ),
         limit: t.Optional(t.Number()),
+        page: t.Optional(t.Number()),
       }),
     },
   );
