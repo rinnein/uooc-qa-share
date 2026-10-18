@@ -30,6 +30,7 @@ export const POST: APIRoute = async ({ request }) => {
         prefix: "uooc_",
         // Long-lived API key for persistent client plugin integration (1 year)
         expiresIn: 60 * 60 * 24 * 365,
+        rateLimitEnabled: false,
       },
     });
 

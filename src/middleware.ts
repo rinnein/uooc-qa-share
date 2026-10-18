@@ -30,42 +30,16 @@ export const onRequest = defineMiddleware(async (context, next) => {
   }
 
   let session = null;
-  try {
-    session = await auth.api.getSession({
-      headers: requestHeaders,
-    });
-  } catch {}
+  // Dedicated API / MCP endpoints handle their own authentication.
+  // Skipping getSession here avoids double-incrementing API key rate limits per request.
+  const isDedicatedAuthRoute =
+    context.url.pathname.startsWith("/api/") || context.url.pathname.startsWith("/mcp");
 
-  // Fallback: direct verifyApiKey if getSession did not resolve it
-  if (!session && targetApiKey) {
+  if (!isDedicatedAuthRoute) {
     try {
-      const verifyRes = await auth.api.verifyApiKey({
-        body: { key: targetApiKey },
+      session = await auth.api.getSession({
+        headers: requestHeaders,
       });
-      if (verifyRes?.valid && verifyRes.key?.referenceId) {
-        const dbUser = await (
-          await auth.$context
-        ).internalAdapter.findUserById(verifyRes.key.referenceId);
-
-        if (dbUser) {
-          session = {
-            user: {
-              ...dbUser,
-              isAnonymous: (dbUser as { isAnonymous?: boolean | null }).isAnonymous ?? false,
-            },
-            session: {
-              id: verifyRes.key.id,
-              userId: dbUser.id,
-              token: targetApiKey,
-              expiresAt: verifyRes.key.expiresAt ?? new Date(Date.now() + 31 * 86400000),
-              createdAt: verifyRes.key.createdAt ?? new Date(),
-              updatedAt: verifyRes.key.updatedAt ?? new Date(),
-              ipAddress: null,
-              userAgent: null,
-            },
-          };
-        }
-      }
     } catch {}
   }
 

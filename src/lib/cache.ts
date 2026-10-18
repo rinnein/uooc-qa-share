@@ -134,10 +134,13 @@ export function createQuestionCachePlugin(options: QuestionCacheOptions = {}) {
         // ETag conditional check (HTTP 304 Not Modified)
         const ifNoneMatch = request.headers.get("if-none-match");
         if (ifNoneMatch && ifNoneMatch === cached.etag) {
-          set.status = 304;
-          set.headers["etag"] = cached.etag;
-          set.headers["x-cache"] = "HIT";
-          return "";
+          return new Response(null, {
+            status: 304,
+            headers: {
+              etag: cached.etag,
+              "x-cache": "HIT",
+            },
+          });
         }
 
         const remainingTtl = Math.max(1, Math.ceil((cached.expiresAt - Date.now()) / 1000));

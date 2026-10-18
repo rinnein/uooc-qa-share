@@ -49,6 +49,7 @@ async function resolveAgentUser(request: Request) {
         };
       }
     } catch {}
+    return null;
   }
 
   // 3. Fallback: provision temporary anonymous agent session if requested

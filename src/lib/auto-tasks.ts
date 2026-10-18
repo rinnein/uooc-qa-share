@@ -22,16 +22,7 @@ export async function resolveUserAuth(request: Request): Promise<UserAuthContext
   let isAnonymous = true;
   let permissionList: string[] = [];
 
-  // 1. Try standard session via Better Auth
-  try {
-    const session = await auth.api.getSession({ headers: request.headers });
-    if (session?.user) {
-      userId = session.user.id;
-      isAnonymous = Boolean(session.user.isAnonymous);
-    }
-  } catch {}
-
-  // 2. Try explicit verifyApiKey if header/bearer is present
+  // Check if an explicit API key is provided
   const apiKey =
     request.headers.get("x-api-key") ||
     request.headers.get("api-key") ||
@@ -39,6 +30,7 @@ export async function resolveUserAuth(request: Request): Promise<UserAuthContext
       ? request.headers.get("authorization")!.slice(7).trim()
       : null);
 
+  // If apiKey is present, verify it once directly to extract key permissions without double increment
   if (apiKey) {
     try {
       const verified = await auth.api.verifyApiKey({ body: { key: apiKey } });
@@ -68,6 +60,15 @@ export async function resolveUserAuth(request: Request): Promise<UserAuthContext
         if (userRec) {
           isAnonymous = Boolean(userRec.isAnonymous);
         }
+      }
+    } catch {}
+  } else {
+    // Otherwise try standard session via Better Auth
+    try {
+      const session = await auth.api.getSession({ headers: request.headers });
+      if (session?.user) {
+        userId = session.user.id;
+        isAnonymous = Boolean(session.user.isAnonymous);
       }
     } catch {}
   }

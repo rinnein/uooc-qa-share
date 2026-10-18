@@ -35,7 +35,7 @@ async function resolveSession(request: Request): Promise<{
   userId: string | null;
   isAnonymous: boolean;
 }> {
-  // 1. Try standard session / apiKey session via Better Auth
+  // Try standard session / apiKey session via Better Auth (enableSessionForAPIKeys handles both)
   try {
     const session = await auth.api.getSession({ headers: request.headers });
     if (session?.user) {
@@ -45,26 +45,6 @@ async function resolveSession(request: Request): Promise<{
       };
     }
   } catch {}
-
-  // 2. Try explicit verifyApiKey if x-api-key header or Bearer is present
-  const apiKey =
-    request.headers.get("x-api-key") ||
-    request.headers.get("api-key") ||
-    (request.headers.get("authorization")?.startsWith("Bearer ")
-      ? request.headers.get("authorization")!.slice(7).trim()
-      : null);
-
-  if (apiKey) {
-    try {
-      const verified = await auth.api.verifyApiKey({ body: { key: apiKey } });
-      if (verified?.valid && verified.key?.referenceId) {
-        return {
-          userId: verified.key.referenceId,
-          isAnonymous: true,
-        };
-      }
-    } catch {}
-  }
 
   return { userId: null, isAnonymous: true };
 }

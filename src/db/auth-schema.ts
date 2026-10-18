@@ -99,8 +99,8 @@ export const apikey = pgTable(
     lastRefillAt: timestamp("last_refill_at"),
     enabled: boolean("enabled").default(true),
     rateLimitEnabled: boolean("rate_limit_enabled").default(true),
-    rateLimitTimeWindow: integer("rate_limit_time_window").default(86400000),
-    rateLimitMax: integer("rate_limit_max").default(10),
+    rateLimitTimeWindow: integer("rate_limit_time_window").default(60000),
+    rateLimitMax: integer("rate_limit_max").default(100),
     requestCount: integer("request_count").default(0),
     remaining: integer("remaining"),
     lastRequest: timestamp("last_request"),
@@ -235,6 +235,19 @@ export const approvalRequest = pgTable(
     index("approvalRequest_status_idx").on(table.status),
   ],
 );
+
+export const deviceCode = pgTable("device_code", {
+  id: text("id").primaryKey(),
+  deviceCode: text("device_code").notNull(),
+  userCode: text("user_code").notNull(),
+  userId: text("user_id"),
+  expiresAt: timestamp("expires_at").notNull(),
+  status: text("status").notNull(),
+  lastPolledAt: timestamp("last_polled_at"),
+  pollingInterval: integer("polling_interval"),
+  clientId: text("client_id"),
+  scope: text("scope"),
+});
 
 export const oauthClient = pgTable(
   "oauth_client",
@@ -412,27 +425,6 @@ export const oauthClientAssertion = pgTable("oauth_client_assertion", {
   expiresAt: timestamp("expires_at").notNull(),
 });
 
-export const deviceCode = pgTable(
-  "device_code",
-  {
-    id: text("id").primaryKey(),
-    deviceCode: text("device_code").notNull().unique(),
-    userCode: text("user_code").notNull().unique(),
-    userId: text("user_id").references(() => user.id, { onDelete: "cascade" }),
-    expiresAt: timestamp("expires_at").notNull(),
-    status: text("status").notNull(),
-    lastPolledAt: timestamp("last_polled_at"),
-    pollingInterval: integer("polling_interval"),
-    clientId: text("client_id"),
-    scope: text("scope"),
-  },
-  (table) => [
-    index("deviceCode_deviceCode_idx").on(table.deviceCode),
-    index("deviceCode_userCode_idx").on(table.userCode),
-    index("deviceCode_userId_idx").on(table.userId),
-  ],
-);
-
 export const userRelations = relations(user, ({ many }) => ({
   sessions: many(session),
   accounts: many(account),
@@ -444,7 +436,6 @@ export const userRelations = relations(user, ({ many }) => ({
   oauthRefreshTokens: many(oauthRefreshToken),
   oauthAccessTokens: many(oauthAccessToken),
   oauthConsents: many(oauthConsent),
-  deviceCodes: many(deviceCode),
 }));
 
 export const sessionRelations = relations(session, ({ one, many }) => ({
@@ -592,13 +583,6 @@ export const oauthConsentRelations = relations(oauthConsent, ({ one }) => ({
   }),
   user: one(user, {
     fields: [oauthConsent.userId],
-    references: [user.id],
-  }),
-}));
-
-export const deviceCodeRelations = relations(deviceCode, ({ one }) => ({
-  user: one(user, {
-    fields: [deviceCode.userId],
     references: [user.id],
   }),
 }));

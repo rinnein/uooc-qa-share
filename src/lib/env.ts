@@ -45,6 +45,13 @@ export const env = createEnv({
     CORS_ORIGINS: z
       .string()
       .default("https://www.uooc.net.cn,tauri://localhost,https://tauri.localhost"),
+
+    API_KEY_RATE_LIMIT_ENABLED: z
+      .string()
+      .default("false")
+      .transform((val) => val === "true"),
+    API_KEY_RATE_LIMIT_TIME_WINDOW: z.coerce.number().default(60000), // 1 minute window in ms
+    API_KEY_RATE_LIMIT_MAX: z.coerce.number().default(100), // 100 requests per window
   },
   clientPrefix: "PUBLIC_",
   client: {},
