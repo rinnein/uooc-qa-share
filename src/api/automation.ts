@@ -2,7 +2,7 @@ import { Elysia, t } from "elysia";
 import { db } from "@/db";
 import { questions } from "@/db/schema";
 import { eq } from "drizzle-orm";
-import { hashStem } from "@/lib/stem";
+import { hashStem, hasHtmlTags } from "@/lib/stem";
 import { EMBEDDING_DIMENSIONS, resolveEmbedding } from "@/lib/embedding";
 import { questionCacheManager } from "@/lib/cache";
 import {
@@ -118,6 +118,15 @@ export const automationRoutes = new Elysia({ prefix: "/automation" })
       }
 
       const { question_id, stem } = body;
+
+      if (hasHtmlTags(stem)) {
+        set.status = 400;
+        return {
+          ok: false,
+          error: "题干包含未过滤的 HTML 标签，请先过滤后再上传",
+        };
+      }
+
       const qNum = Number(question_id);
 
       const targetQuestion = !Number.isNaN(qNum)

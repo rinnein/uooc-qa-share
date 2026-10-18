@@ -167,20 +167,45 @@
     {
       "question_id": "2057971114",
       "type": "single",
-      "stem": "以下哪个正确？",
+      "stem": "以下关于矩阵初等变换的说法中正确的是？",
       "options": [
-        { "id": "A", "text": "选项A" },
-        { "id": "B", "text": "选项B" }
+        { "id": "A", "text": "初等变换改变矩阵的秩" },
+        { "id": "B", "text": "初等变换不改变矩阵的秩" }
       ],
       "embedding": [0.0123, 0.0456, 0.0789],
-      "correct_answers": ["选项A"],
+      "correct_answers": ["B"],
+      "wrong_answers": null
+    },
+    {
+      "question_id": "2057971115",
+      "type": "judge",
+      "stem": "所有初等函数在其定义域内均连续。",
+      "options": [
+        { "id": "A", "text": "正确" },
+        { "id": "B", "text": "错误" }
+      ],
+      "correct_answers": [true],
+      "wrong_answers": null
+    },
+    {
+      "question_id": "2057971116",
+      "type": "text",
+      "stem": "微积分基本公式又称作____公式。",
+      "blanks": 1,
+      "values": ["牛顿-莱布尼茨"],
       "wrong_answers": null
     },
     {
       "question_id": "1486355087",
       "type": "multiple",
+      "options": [
+        { "id": "A", "text": "选项A" },
+        { "id": "B", "text": "选项B" },
+        { "id": "C", "text": "选项C" },
+        { "id": "D", "text": "选项D" }
+      ],
       "correct_answers": null,
-      "wrong_answers": ["选项C", "选项D"]
+      "wrong_answers": ["C", "D"]
     }
   ]
 }
@@ -188,28 +213,40 @@
 
 **字段说明:**
 
-| 字段                          | 必填 | 说明                                                                                             |
-| ----------------------------- | ---- | ------------------------------------------------------------------------------------------------ |
-| `tid`                         | ✅   | UOOC 题组 ID                                                                                     |
-| `cid`                         | ❌   | 课程 ID，未提供时使用 tid 作为占位                                                               |
-| `questions[].question_id`     | ✅   | UOOC 题单真实单题 ID（对应 `/exam/getTaskPaper` 的 `data.questions[].id`，需临时保存草稿后拉取） |
-| `questions[].type`            | ✅   | `single` / `multiple` / `judge` / `text`                                                         |
-| `questions[].stem`            | ❌   | 题干文本（可含 HTML）                                                                            |
-| `questions[].embedding`       | ❌   | 插件生成的 1536 维题干词向量                                                                     |
-| `questions[].options`         | ❌   | 选项列表 `[{id, text}]`                                                                          |
-| `questions[].correct_answers` | ❌   | 正确答案值数组（推荐存放选项文本内容，以便客户端对冲选项乱序）                                   |
-| `questions[].wrong_answers`   | ❌   | 已排除的错误答案值数组                                                                           |
+| 字段                          | 必填 | 说明                                                                                                                                                                                                                                             |
+| ----------------------------- | ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `tid`                         | ✅   | UOOC 题组 ID                                                                                                                                                                                                                                     |
+| `cid`                         | ❌   | 课程 ID，未提供时使用 tid 作为占位                                                                                                                                                                                                               |
+| `questions[].question_id`     | ✅   | UOOC 题单真实单题 ID（对应 `/exam/getTaskPaper` 的 `data.questions[].id`，需临时保存草稿后拉取）                                                                                                                                                 |
+| `questions[].type`            | ✅   | `single` / `multiple` / `judge` / `text`                                                                                                                                                                                                         |
+| `questions[].stem`            | ❌   | 题干纯文本（**严禁包含 HTML 标签；包含 HTML 标签的请求将被直接返回 400 拒绝**）                                                                                                                                                                  |
+| `questions[].embedding`       | ❌   | 插件生成的 1536 维题干词向量                                                                                                                                                                                                                     |
+| `questions[].options`         | ❌   | 选项列表 `[{id, text}]`（选项文本也必须过滤 HTML 标签；判断题永远固定为 A. 正确与 B. 错误）                                                                                                                                                      |
+| `questions[].blanks`          | ❌   | 填空题空数（填空题时填写，若未填写则根据 `values` 长度自动设置）                                                                                                                                                                                 |
+| `questions[].values`          | ❌   | 填空题答案数组（`values[]` 数组，其标号对应该题目提供的填空空数）或标准答案数组                                                                                                                                                                  |
+| `questions[].correct_answers` | ❌   | 正确答案值数组：<br>1. **单选/多选题**：仅保存对应 `options[].id` 值的选项（如 `["A"]` 或 `["A", "C"]`），严禁保存选项实际文本内容；<br>2. **判断题**：以唯一的 boolean 项存储（`[true]` 或 `[false]`）；<br>3. **填空题**：支持 `values[]` 数组 |
+| `questions[].wrong_answers`   | ❌   | 已排除的错误答案值数组（单选/多选仅存选项 ID 如 `["C", "D"]`，判断题如 `[false]`）                                                                                                                                                               |
 
 **处理逻辑:**
 
-1. 自动创建不存在的课程和题组
-2. 按 `(tid, question_id)` 匹配题目（以真实单题 ID 优先），回退到 `stem_hash` 与向量语义匹配
-3. 提供 `correct_answers` 时：
+0. **数据合规性强校验与拒绝机制**：
+   服务端在执行任何写库操作前，对全部题目进行前置严格检验，任何不合规项均会立即中断并返回 HTTP 400 (`{ ok: false, error: "..." }`)：
+   - **HTML 标签校验**：题干 `stem` 与选项文本 `options[].text` 严禁包含未过滤的 HTML 标签（如 `<p>`, `<span>`, `<br>` 等）；
+   - **选择题 (`single` / `multiple`) 校验**：必须包含至少 2 个不重复选项；答案数组（`values` / `correct_answers` / `wrong_answers`）内部**严禁包含重复项**（如 `["A", "A"]`），且所有答案项均**必须在 `options[].id` 范围内**（单选题在未确认唯一正确答案前，支持上传包含多个已标记错误项或试错候选项的数组）；
+   - **判断题 (`judge`) 校验**：答案数组有且只能包含 1 个值，且必须为合规的布尔值（或可明确转为布尔值的标准表示）；
+   - **填空题 (`text`) 校验**：不应包含 `options` 选项列表；答案数组中每项不得为空字符串；若显式声明了 `blanks` 且大于 0，答案数组长度必须与 `blanks` 严格一致。
+1. 自动创建不存在的课程和题组。
+2. 按 `(tid, question_id)` 匹配题目（以真实单题 ID 优先），回退到 `stem_hash` 与向量语义匹配。
+3. **答案规范化存储**：
+   - **单选题 / 多选题**：如果提交了选项文本内容，服务端自动通过选项列表比对并转换为对应的 `options[].id`，仅持久化存储选项 ID，不冗余保存答案文本。
+   - **判断题**：永远只有 `A. 正确`、`B. 错误` 两个选项，答案统一规范化为唯一的 boolean 项（`[true]` 或 `[false]`）存储。
+   - **填空题**：支持上传 `values[]` 数组，其标号（0, 1, 2...）严格对应填空的空数，并自动将题目的 `blanks` 补齐为填空空数。
+4. 提供正确答案（`values` 或 `correct_answers`）时：
    - 创建/更新正确答案
    - 删除该题已有的错误答案排除记录
    - 匿名用户不允许覆盖已有正确答案（返回 `denied_anonymous_overwrite`）
-4. 仅提供 `wrong_answers` 时：添加错误答案排除标记
-5. 如果提供了 `stem`/`options` 且题目之前未存储，自动更新
+5. 仅提供 `wrong_answers` 时：添加错误答案排除标记。
+6. 如果提供了 `stem`/`options` 且题目之前未存储，自动更新。
 
 向量处理规则：上传请求带有 `embedding` 时直接使用客户端向量；未带向量时，仅在服务端配置 `EMBEDDING_API_URL` 和 `EMBEDDING_API_KEY` 时调用 embedding 模型。向量必须为 1536 维数字数组。
 
@@ -381,7 +418,7 @@
 
 ### POST /api/automation/tasks/stem
 
-回填题目的缺失题干文本。需要写权限（匿名 API Key 允许填补空题干；若题目已有题干则匿名用户不可覆盖）。更新后系统自动重算 `stemHash` 并尝试生成 `stemEmbedding`。
+回填题目的缺失题干文本。题干必须为过滤后的纯文本，若包含 HTML 标签将被返回 HTTP 400 拒绝。需要写权限（匿名 API Key 允许填补空题干；若题目已有题干则匿名用户不可覆盖）。更新后系统自动重算 `stemHash` 并尝试生成 `stemEmbedding`。
 
 **请求体:**
 

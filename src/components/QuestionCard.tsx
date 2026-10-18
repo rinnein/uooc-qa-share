@@ -14,7 +14,7 @@ const typeBadgeColors: Record<string, string> = {
 
 type Answer = {
   id: number;
-  values: string[];
+  values: unknown[];
   isCorrect: boolean;
   source: string;
   confidence: number;
@@ -30,6 +30,34 @@ type Question = {
   answers?: Answer[];
   similarity?: number;
 };
+
+function isOptionSelected(values: unknown[], optId: string, qType?: string): boolean {
+  if (!Array.isArray(values)) return false;
+  return values.some((val) => {
+    if (val === optId) return true;
+    if (qType === "judge" || optId === "A" || optId === "B") {
+      if (optId === "A" && (val === true || val === "true" || val === "正确")) return true;
+      if (optId === "B" && (val === false || val === "false" || val === "错误")) return true;
+    }
+    return false;
+  });
+}
+
+function formatAnswerValues(values: unknown[], qType?: string): string {
+  if (!Array.isArray(values)) return String(values);
+  if (qType === "text" && values.length > 1) {
+    return values.map((v, i) => `第${i + 1}空: ${String(v)}`).join("; ");
+  }
+  return values
+    .map((v) => {
+      if (typeof v === "boolean" || qType === "judge") {
+        if (v === true || v === "true") return "A. 正确";
+        if (v === false || v === "false") return "B. 错误";
+      }
+      return String(v);
+    })
+    .join(", ");
+}
 
 export default function QuestionCard({ question }: { question: Question }) {
   const q = question;
@@ -68,9 +96,9 @@ export default function QuestionCard({ question }: { question: Question }) {
             <span
               key={opt.id}
               className={`rounded border px-1.5 py-0.5 ${
-                correctAnswers.some((a) => (a.values as string[]).includes(opt.id))
+                correctAnswers.some((a) => isOptionSelected(a.values, opt.id, q.type))
                   ? "border-green-500 bg-green-50 text-green-700 dark:bg-green-950 dark:text-green-300"
-                  : wrongAnswers.some((a) => (a.values as string[]).includes(opt.id))
+                  : wrongAnswers.some((a) => isOptionSelected(a.values, opt.id, q.type))
                     ? "border-red-500 bg-red-50 text-red-700 line-through dark:bg-red-950 dark:text-red-300"
                     : "border-border"
               }`}
@@ -84,12 +112,13 @@ export default function QuestionCard({ question }: { question: Question }) {
       <div className="flex items-center gap-2 text-xs">
         {correctAnswers.length > 0 && (
           <span className="text-green-600 dark:text-green-400">
-            ✓ 正确答案: {correctAnswers.map((a) => (a.values as string[]).join(", ")).join(" | ")}
+            ✓ 正确答案:{" "}
+            {correctAnswers.map((a) => formatAnswerValues(a.values, q.type)).join(" | ")}
           </span>
         )}
         {wrongAnswers.length > 0 && (
           <span className="text-red-500 dark:text-red-400">
-            ✗ 排除: {wrongAnswers.map((a) => (a.values as string[]).join(", ")).join(", ")}
+            ✗ 排除: {wrongAnswers.map((a) => formatAnswerValues(a.values, q.type)).join(", ")}
           </span>
         )}
         {correctAnswers.length === 0 && wrongAnswers.length === 0 && (

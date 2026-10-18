@@ -9,7 +9,7 @@ const typeLabels: Record<string, string> = {
 
 type Answer = {
   id: number;
-  values: string[];
+  values: unknown[];
   isCorrect: boolean;
   source: string;
   confidence: number;
@@ -25,6 +25,34 @@ type Question = {
   options: { id: string; text: string }[] | null;
   blanks: number;
 };
+
+function isOptionSelected(values: unknown[], optId: string, qType?: string): boolean {
+  if (!Array.isArray(values)) return false;
+  return values.some((val) => {
+    if (val === optId) return true;
+    if (qType === "judge" || optId === "A" || optId === "B") {
+      if (optId === "A" && (val === true || val === "true" || val === "正确")) return true;
+      if (optId === "B" && (val === false || val === "false" || val === "错误")) return true;
+    }
+    return false;
+  });
+}
+
+function formatAnswerValues(values: unknown[], qType?: string): string {
+  if (!Array.isArray(values)) return String(values);
+  if (qType === "text" && values.length > 1) {
+    return values.map((v, i) => `第${i + 1}空: ${String(v)}`).join("; ");
+  }
+  return values
+    .map((v) => {
+      if (typeof v === "boolean" || qType === "judge") {
+        if (v === true || v === "true") return "A. 正确";
+        if (v === false || v === "false") return "B. 错误";
+      }
+      return String(v);
+    })
+    .join(", ");
+}
 
 export default function QuestionDetail({ questionId }: { questionId: string }) {
   const [question, setQuestion] = useState<Question | null>(null);
@@ -55,6 +83,9 @@ export default function QuestionDetail({ questionId }: { questionId: string }) {
           <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
             {typeLabels[question.type] ?? question.type}
           </span>
+          {question.type === "text" && question.blanks > 0 && (
+            <span className="text-xs text-muted-foreground">共 {question.blanks} 空</span>
+          )}
           <span className="text-xs text-muted-foreground">ID: {question.id}</span>
           <span className="text-xs text-muted-foreground">
             题组:{" "}
@@ -77,8 +108,10 @@ export default function QuestionDetail({ questionId }: { questionId: string }) {
         <div className="space-y-1">
           <h3 className="text-sm font-semibold text-muted-foreground">选项</h3>
           {question.options.map((opt) => {
-            const isCorrect = correct.some((a) => (a.values as string[]).includes(opt.id));
-            const isWrong = wrong.some((a) => (a.values as string[]).includes(opt.id));
+            const isCorrect = correct.some((a) =>
+              isOptionSelected(a.values, opt.id, question.type),
+            );
+            const isWrong = wrong.some((a) => isOptionSelected(a.values, opt.id, question.type));
             return (
               <div
                 key={opt.id}
@@ -110,7 +143,9 @@ export default function QuestionDetail({ questionId }: { questionId: string }) {
           >
             <div className="flex items-center gap-2">
               <span>{a.isCorrect ? "✓ 正确答案" : "✗ 错误答案"}</span>
-              <span className="text-muted-foreground">{(a.values as string[]).join(", ")}</span>
+              <span className="text-muted-foreground">
+                {formatAnswerValues(a.values, question.type)}
+              </span>
             </div>
             <div className="text-xs text-muted-foreground mt-1">
               来源: {a.source} · 置信度: {(a.confidence * 100).toFixed(0)}%

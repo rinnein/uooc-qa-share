@@ -113,7 +113,7 @@ UOOC QA Share 平台内置了基于 Streamable HTTP 协议的高性能 MCP（Mod
 - **描述**：为缺失题干的题目补全完整题干文本内容，平台将自动计算 `stem_hash` 并生成词向量。
 - **参数**：
   - `question_id` (string, required): 内部题目 ID 或 UOOC `question_id`。
-  - `stem` (string, required): 完整的题干文本（可包含原始 HTML 标签）。
+  - `stem` (string, required): 完整的题干文本（必须为纯文本，严禁包含 HTML 标签）。
 
 ### 3.8 `fulfill_embedding_task`
 
@@ -158,11 +158,13 @@ Agent 可直接调用 Prompt: `analyze_and_upload_qa`，传入参数：
 1. 题目识别：
    - 提取每道题真实单题的 question_id（优先使用 UOOC 题单接口 /exam/getTaskPaper 返回的真实单题数字 ID；若无显式 ID，使用序号如 "1", "2"）。
    - 判断题型 type: single (单选) / multiple (多选) / judge (判断) / text (填空)。
-   - 题干 stem: 尽可能提取完整题干，若包含 HTML 标签请保留。
-   - 选项 options: 对单选题/多选题/判断题，提取选项列表 [{ id: "A", text: "..." }, ...]。必要时记录选项文本，便于客户端做文本比对防选项乱序。
+   - 题干 stem: 尽可能提取完整题干，必须彻底过滤去除 HTML 标签，仅保留纯文本（平台严禁并拒绝包含 HTML 标签的请求）。
+   - 选项 options: 对单选题/多选题/判断题，提取选项列表 [{ id: "A", text: "..." }, ...]，选项文本也必须过滤 HTML 标签。对判断题，选项固定为 [{ id: "A", text: "正确" }, { id: "B", text: "错误" }]。
 2. 答案识别：
-   - 若题目已确认正确答案，提取为 correct_answers（单选/判断如 ["A"]，多选如 ["A","C"]，填空如 ["第1空","第2空"]）。
-   - 若题目无正确答案但已知某些选项错误，提取为 wrong_answers（如 ["B","D"]）。
+   - 单选/多选: 保存选项时仅保存对应 options[].id 值（单选如 ["A"]，多选如 ["A","C"]），不要保存选项实际文本内容。
+   - 判断题: 永远只有 A. 正确、B. 错误 两个选项，以唯一的 boolean 项存储为 [true] 或 [false]。
+   - 填空题: 提取为 values[] 数组（如 ["第1空","第2空"]），数组标号严格对应填空的空数。
+   - 若题目无正确答案但已知某些选项错误，提取为 wrong_answers（单选/多选如 ["B","D"]，判断题如 [false]）。
 3. 清洗完成后，直接调用 upload_answers 工具提交入库。
 ```
 

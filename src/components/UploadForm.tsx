@@ -12,14 +12,16 @@ const AI_PROMPT = `你是一个专业的 UOOC（优课联盟）题目数据清�
 2. 题目识别：
    - question_id: UOOC 题单真实单题 ID（优先提取对应 /exam/getTaskPaper 接口返回的真实数字 ID 如 "2057971114"；若解析文件中无真实单题 ID，请按题号提取为 "1", "2"）
    - type: 题型，必须为 single (单选) / multiple (多选) / judge (判断) / text (填空) 之一
-   - stem: 完整题干内容（保留原始 HTML 标签及格式）
-   - options: 选项列表 [{"id": "A", "text": "选项完整文本"}, ...]。请务必完整保留选项文本内容，以便系统和客户端通过文本内容进行精确比对，防止作答时选项字母随机乱序打乱
-   - blanks: 填空题空数（填空题时填写，默认 0）
+   - stem: 完整题干纯文本（注意：严禁包含任何 HTML 标签，必须彻底过滤为纯文本；若包含 HTML 标签将被服务端直接拒绝）
+   - options: 选项列表 [{"id": "A", "text": "选项完整纯文本"}, ...]。选项文本必须过滤 HTML 标签。对判断题，选项固定为 [{"id": "A", "text": "正确"}, {"id": "B", "text": "错误"}]
+   - blanks: 填空题空数（填空题时填写，对应该题目提供的填空空数）
 
 3. 答案识别：
-   - correct_answers: 已确认的标准正确答案数组，单选/判断如 ["A"] 或选项文本，多选如 ["A", "C"]，填空如 ["第一空答案", "第二空答案"]
-   - wrong_answers: 若题目尚未得知正确答案但已知某些选项错误，提取已排除的错误选项数组（如 ["B", "D"]）；若无已知错误选项设为 null
-   - 若答案完全未知，correct_answers 与 wrong_answers 均设为 null
+   - 单选 / 多选题：保存选项时，应当仅保存对应 options[].id 值的那个选项（单选如 ["A"]，多选如 ["A", "C"]），切勿保存选项文本内容（因为选项内容已在 options[].text 内保存）
+   - 判断题：永远只有 A. 正确、B. 错误 两个选项，以唯一的 boolean 项存储（正确为 [true]，错误为 [false]）
+   - 填空题：支持上传 values[] 数组（如 ["第一空答案", "第二空答案"]），数组标号（0, 1...）严格对应该题目提供的填空的空数
+   - wrong_answers: 若题目尚未得知正确答案但已知某些选项错误，提取已排除的错误选项 ID 数组（单选/多选如 ["B", "D"]，判断题如 [false]）；若无已知错误选项设为 null
+   - 若答案完全未知，correct_answers / values 与 wrong_answers 均设为 null
 
 【JSON 输出格式】
 {
@@ -37,6 +39,25 @@ const AI_PROMPT = `你是一个专业的 UOOC（优课联盟）题目数据清�
         {"id": "B", "text": "单调有界数列必有极限"}
       ],
       "correct_answers": ["B"],
+      "wrong_answers": null
+    },
+    {
+      "question_id": "2057971115",
+      "type": "judge",
+      "stem": "所有初等函数在其定义域内均连续。",
+      "options": [
+        {"id": "A", "text": "正确"},
+        {"id": "B", "text": "错误"}
+      ],
+      "correct_answers": [true],
+      "wrong_answers": null
+    },
+    {
+      "question_id": "2057971116",
+      "type": "text",
+      "stem": "微积分基本公式又称做____公式。",
+      "blanks": 1,
+      "values": ["牛顿-莱布尼茨"],
       "wrong_answers": null
     }
   ]
@@ -59,10 +80,26 @@ export default function UploadForm() {
       if (!data.tid) return { valid: false, error: "缺少 tid 字段" };
       if (!Array.isArray(data.questions) || data.questions.length === 0)
         return { valid: false, error: "questions 必须是非空数组" };
+      const hasHtml = /<(?:[a-zA-Z/][a-zA-Z0-9:-]*\b[^>]*|!--[\s\S]*?--)>/i;
       for (const q of data.questions) {
         if (!q.question_id) return { valid: false, error: "每道题必须有 question_id" };
         if (!["single", "multiple", "judge", "text"].includes(q.type))
           return { valid: false, error: `无效的题目类型: ${q.type}` };
+        if (q.stem && hasHtml.test(q.stem))
+          return {
+            valid: false,
+            error: `题目 #${q.question_id} 的题干包含未过滤的 HTML 标签，请先过滤纯文本后再提交`,
+          };
+        if (Array.isArray(q.options)) {
+          for (const opt of q.options) {
+            if (opt && (hasHtml.test(opt.text) || hasHtml.test(opt.id))) {
+              return {
+                valid: false,
+                error: `题目 #${q.question_id} 的选项包含未过滤的 HTML 标签，请先过滤纯文本后再提交`,
+              };
+            }
+          }
+        }
       }
       return { valid: true, data };
     } catch {

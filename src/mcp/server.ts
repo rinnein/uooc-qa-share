@@ -43,17 +43,17 @@ ${task_name ? `- task_name (题组名): ${task_name}` : ""}
    - 判断题型 type:
      * single: 单选题
      * multiple: 多选题
-     * judge: 判断题（是/否，正确/错误）
+     * judge: 判断题（永远固定为 A. 正确、B. 错误 两个选项）
      * text: 填空题
-   - 题干 stem: 尽可能提取完整题干，若包含 HTML 标签请保留。
-   - 选项 options: 对单选题/多选题/判断题，提取选项列表 [{ id: "A", text: "..." }, ...]。
+   - 题干 stem: 尽可能提取完整题干，必须彻底过滤去除 HTML 标签，仅保留纯文本（平台会直接拒绝包含 HTML 标签的请求）。
+   - 选项 options: 对单选题/多选题/判断题，提取选项列表 [{ id: "A", text: "..." }, ...]，选项文本也必须过滤 HTML 标签。对判断题，选项固定为 [{ id: "A", text: "正确" }, { id: "B", text: "错误" }]。
 2. 答案识别：
-   - 若题目已确认正确答案，提取为 correct_answers:
-     * 单选/判断: ["A"] 或 ["正确"]
-     * 多选: ["A", "C"]
-     * 填空: ["第一空答案", "第二空答案"]
+   - 若题目已确认正确答案，提取为 correct_answers 或 values:
+     * 单选/多选: 保存选项时仅保存对应 options[].id 值（单选如 ["A"]，多选如 ["A", "C"]），严禁保存选项实际文本内容（选项内容已在 options[].text 保存）
+     * 判断题: 永远只有 A. 正确、B. 错误 两个选项，以唯一的 boolean 项存储（正确为 [true]，错误为 [false]）
+     * 填空题: 提取为 values 数组（如 ["第一空答案", "第二空答案"]），数组标号（0, 1...）严格对应该题目提供的填空空数
    - 若题目无已确认正确答案，但通过试错已知某些答案是错误的，提取为 wrong_answers:
-     * 例如 ["B", "D"]
+     * 单选/多选例如 ["B", "D"]，判断题例如 [false]
    - 若两者均未知，可均设为 null。
 3. 清洗完成后，调用 upload_answers 工具，传入 JSON 字符串。
 JSON 格式规范：
@@ -66,12 +66,31 @@ JSON 格式规范：
     {
       "question_id": "1",
       "type": "single",
-      "stem": "题干内容",
+      "stem": "题干纯文本内容",
       "options": [
         { "id": "A", "text": "选项A" },
         { "id": "B", "text": "选项B" }
       ],
       "correct_answers": ["A"],
+      "wrong_answers": null
+    },
+    {
+      "question_id": "2",
+      "type": "judge",
+      "stem": "题干纯文本内容",
+      "options": [
+        { "id": "A", "text": "正确" },
+        { "id": "B", "text": "错误" }
+      ],
+      "correct_answers": [true],
+      "wrong_answers": null
+    },
+    {
+      "question_id": "3",
+      "type": "text",
+      "stem": "题干纯文本内容，含____",
+      "blanks": 1,
+      "values": ["第一空答案"],
       "wrong_answers": null
     }
   ]

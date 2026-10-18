@@ -383,7 +383,7 @@ UOOC 平台在向前端渲染试卷时，可能开启了防作弊机制，导致
 
 ### 4.2 批量上报格式规范 (`POST /api/upload/batch`)
 
-测验完成后，将解析出的真实单题 ID、题型、题干、选项与答案批量上传：
+测验完成后，将解析出的真实单题 ID、题型、纯文本题干、选项与答案批量上传：
 
 ```http
 POST /api/upload/batch
@@ -408,13 +408,32 @@ x-api-key: uooc_... (可选)
         { "id": "D", "text": "国际互联网技术的发展" }
       ],
       "embedding": [0.0123, 0.0456, 0.0789],
-      "correct_answers": ["ALphaGo围棋比赛大获全胜"],
+      "correct_answers": ["C"],
+      "wrong_answers": null
+    },
+    {
+      "question_id": "2057971115",
+      "type": "judge",
+      "stem": "神经网络属于连接主义学派。",
+      "options": [
+        { "id": "A", "text": "正确" },
+        { "id": "B", "text": "错误" }
+      ],
+      "correct_answers": [true],
+      "wrong_answers": null
+    },
+    {
+      "question_id": "2057971116",
+      "type": "text",
+      "stem": "图灵测试是由英国数学家____在1950年提出的。",
+      "blanks": 1,
+      "values": ["阿兰·图灵"],
       "wrong_answers": null
     },
     {
       "question_id": "1486355087",
-      "type": "single",
-      "stem": "中国人工智能领域市场规模最大的是（   ）。",
+      "type": "multiple",
+      "stem": "中国人工智能领域市场规模较大的有（   ）。",
       "options": [
         { "id": "A", "text": "自然语言处理" },
         { "id": "B", "text": "计算机视觉" },
@@ -422,7 +441,7 @@ x-api-key: uooc_... (可选)
         { "id": "D", "text": "智能硬件" }
       ],
       "correct_answers": null,
-      "wrong_answers": ["自然语言处理", "语音识别"]
+      "wrong_answers": ["A", "C"]
     }
   ]
 }
@@ -431,7 +450,15 @@ x-api-key: uooc_... (可选)
 > **注意**：
 >
 > - `question_id` 必须传 UOOC 题单中的真实单题数字 ID（字符串格式），服务端 `questions` 表已建立 `(tid, question_id)` 唯一索引进行约束。
-> - 选项与正确答案建议同时包含文本内容，便于客户端通过**文本比对**对冲选项随机打乱风险。
+> - **严禁包含 HTML 标签**：题干 `stem` 与选项 `options[].text` 必须彻底清洗过滤 HTML 标签（如 `<p>`, `<span>`, `<br>` 等）；若服务端检测到未过滤的 HTML 标签，将直接返回 HTTP 400 拒绝整个上传请求。
+> - **数据合规性校验（强校验）**：
+>   - 选择题（单选/多选）：答案数组内**严禁包含重复项**（如 `["A", "A"]`），且所有答案项必须在 `options[].id` 范围内（单选题在未确认唯一正确答案前，支持上传标记了多个错误项或试错候选项的数组）；
+>   - 判断题：答案只能包含 1 个布尔值；
+>   - 填空题：若指定了空数 `blanks`，答案数量必须与 `blanks` 一致，且答案项不能为空。
+>     不符合规则的请求将被服务端直接以 HTTP 400 拒绝。
+> - **单选/多选题答案**：仅需保存对应 `options[].id` 值的选项（如 `["C"]` 或 `["A", "C"]`），严禁/不再保存实际选项文本内容（因为选项内容已经在 `options[].text` 中保存）。若客户端传入了选项文本，服务端也会自动比对转换为选项 ID。
+> - **判断题规范**：永远只有 `A. 正确`、`B. 错误` 两个选项，答案统一以唯一的 boolean 项存储（正确为 `[true]`，错误为 `[false]`）。
+> - **填空题规范**：支持上传 `values[]` 数组，其标号（0, 1...）严格对应该题目提供的填空的空数，题目的 `blanks` 对应填空总空数。
 > - `embedding` 为可选字段，必须是与服务端 `vector(1536)` 兼容的 1536 维数字数组。插件已生成词向量时，建议随题目一并上传；服务端优先使用该向量。
 > - 未提供 `embedding` 时，服务端仅在配置 `EMBEDDING_API_URL` 与 `EMBEDDING_API_KEY` 后才调用模型生成；未配置时不会发起模型请求，继续使用文本匹配回退。
 > - 一旦某题目成功录入 `correct_answers`，服务端会自动清理该题目之前存储的全部错误答案排除记录。
@@ -676,22 +703,68 @@ for (let i = 0; i < officialQuestions.length; i++) {
   // 走原有大模型截图作答流程...
 }
 
-// 4. 提交通过后以真实单题 ID 上报答案
+// 4. 提交通过后以真实单题 ID 上报答案（注意：必须过滤 HTML 标签）
 if (quizPassed) {
-  const recordedList = officialQuestions.map((oq) => ({
-    question_id: String(oq.id),
-    type:
+  function stripHtml(str) {
+    return str
+      ? String(str)
+          .replace(/<[^>]*>/g, "")
+          .replace(/&[a-z]+;/gi, " ")
+          .trim()
+      : "";
+  }
+
+  const recordedList = officialQuestions.map((oq) => {
+    const qType =
       oq.type === "10"
         ? "single"
         : oq.type === "11"
           ? "multiple"
           : oq.type === "20"
             ? "judge"
-            : "text",
-    stem: oq.question,
-    options: (oq.options_app || []).map((o) => ({ id: o.key, text: o.value })),
-    correct_answers: Array.isArray(oq.answer) ? oq.answer : [oq.answer],
-  }));
+            : "text";
+
+    const cleanStem = stripHtml(oq.question);
+    const cleanOptions = (oq.options_app || []).map((o) => ({
+      id: o.key,
+      text: stripHtml(o.value),
+    }));
+
+    if (qType === "judge") {
+      const isTrue = oq.answer === "A" || oq.answer === "正确" || oq.answer === true;
+      return {
+        question_id: String(oq.id),
+        type: "judge",
+        stem: cleanStem,
+        options: [
+          { id: "A", text: "正确" },
+          { id: "B", text: "错误" },
+        ],
+        correct_answers: [isTrue],
+      };
+    }
+
+    if (qType === "text") {
+      const vals = Array.isArray(oq.answer) ? oq.answer.map(stripHtml) : [stripHtml(oq.answer)];
+      return {
+        question_id: String(oq.id),
+        type: "text",
+        stem: cleanStem,
+        blanks: vals.length,
+        values: vals,
+      };
+    }
+
+    // 单选 / 多选：仅保存对应 options[].id 值
+    const ansIds = Array.isArray(oq.answer) ? oq.answer : [oq.answer];
+    return {
+      question_id: String(oq.id),
+      type: qType,
+      stem: cleanStem,
+      options: cleanOptions,
+      correct_answers: ansIds,
+    };
+  });
 
   await uploadTaskResults({
     tid,

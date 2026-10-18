@@ -2,10 +2,385 @@ import { Elysia, t } from "elysia";
 import { db } from "@/db";
 import { courses, taskGroups, questions, answers } from "@/db/schema";
 import { eq, and, sql } from "drizzle-orm";
-import { hashStem } from "@/lib/stem";
+import { hashStem, hasHtmlTags } from "@/lib/stem";
 import { EMBEDDING_DIMENSIONS, resolveEmbedding } from "@/lib/embedding";
 import { auth } from "@/lib/auth";
 import { questionCacheManager } from "@/lib/cache";
+
+const JUDGE_OPTIONS = [
+  { id: "A", text: "正确" },
+  { id: "B", text: "错误" },
+];
+
+export function normalizeJudgeValue(val: unknown): boolean | null {
+  if (typeof val === "boolean") return val;
+  if (typeof val === "number") return val === 1;
+  if (typeof val === "string") {
+    const s = val.trim().toLowerCase();
+    if (
+      s === "true" ||
+      s === "1" ||
+      s === "a" ||
+      s === "正确" ||
+      s === "对" ||
+      s === "t" ||
+      s === "yes" ||
+      s === "y" ||
+      s.startsWith("a.") ||
+      s.startsWith("a、") ||
+      s.startsWith("a ")
+    ) {
+      return true;
+    }
+    if (
+      s === "false" ||
+      s === "0" ||
+      s === "b" ||
+      s === "错误" ||
+      s === "错" ||
+      s === "f" ||
+      s === "no" ||
+      s === "n" ||
+      s.startsWith("b.") ||
+      s.startsWith("b、") ||
+      s.startsWith("b ")
+    ) {
+      return false;
+    }
+  }
+  return null;
+}
+
+export function normalizeChoiceAnswers(
+  rawValues: unknown[],
+  options?: { id: string; text: string }[] | null,
+): string[] {
+  if (!rawValues || rawValues.length === 0) return [];
+  const opts = options ?? [];
+  const validIds = new Set(opts.map((o) => o.id));
+  const result: string[] = [];
+
+  for (const raw of rawValues) {
+    if (typeof raw !== "string" && typeof raw !== "number" && typeof raw !== "boolean") continue;
+    const val = String(raw).trim();
+    if (!val) continue;
+
+    // 1. Direct match with opt.id
+    if (validIds.has(val)) {
+      if (!result.includes(val)) result.push(val);
+      continue;
+    }
+
+    // 2. Case-insensitive id match (e.g. "a" -> "A")
+    const matchedById = opts.find((o) => o.id.toLowerCase() === val.toLowerCase());
+    if (matchedById) {
+      if (!result.includes(matchedById.id)) result.push(matchedById.id);
+      continue;
+    }
+
+    // 3. Match by option text
+    const matchedByText = opts.find(
+      (o) => o.text.trim() === val || o.text.replace(/\s+/g, "") === val.replace(/\s+/g, ""),
+    );
+    if (matchedByText) {
+      if (!result.includes(matchedByText.id)) result.push(matchedByText.id);
+      continue;
+    }
+
+    // 4. Prefix match like "A. 选项A内容" or "A、选项A内容"
+    const prefixMatch = val.match(/^([A-Za-z0-9]+)[.、:：\s]/);
+    if (prefixMatch) {
+      const candidateId = prefixMatch[1];
+      const matched = opts.find((o) => o.id.toLowerCase() === candidateId.toLowerCase());
+      if (matched) {
+        if (!result.includes(matched.id)) result.push(matched.id);
+        continue;
+      }
+      const upper = candidateId.toUpperCase();
+      if (!result.includes(upper)) result.push(upper);
+      continue;
+    }
+
+    // 5. If it looks like a single letter ID ("A", "B", etc.)
+    if (/^[A-Za-z]$/.test(val)) {
+      const upper = val.toUpperCase();
+      if (!result.includes(upper)) result.push(upper);
+    } else {
+      // Fallback if no options were provided to map against
+      if (!result.includes(val)) result.push(val);
+    }
+  }
+
+  return result;
+}
+
+export function validateQuestionUpload(
+  q: {
+    question_id: string;
+    type: string;
+    stem?: string;
+    options?: { id: string; text: string }[];
+    blanks?: number;
+    correct_answers?: unknown[];
+    wrong_answers?: unknown[];
+    values?: unknown[];
+  },
+  existingOptions?: { id: string; text: string }[] | null,
+): { valid: true } | { valid: false; error: string } {
+  // 1. Validate question type
+  const validTypes = ["single", "multiple", "judge", "text"];
+  if (!validTypes.includes(q.type)) {
+    return {
+      valid: false,
+      error: `题目 #${q.question_id} 的类型 '${q.type}' 无效，必须为 single、multiple、judge 或 text 之一`,
+    };
+  }
+
+  // 2. Validate HTML tags
+  if (q.stem && hasHtmlTags(q.stem)) {
+    return {
+      valid: false,
+      error: `题目 #${q.question_id} 的题干包含未过滤的 HTML 标签，已拒绝该请求`,
+    };
+  }
+  if (q.options) {
+    for (const opt of q.options) {
+      if (!opt.id || !opt.id.trim()) {
+        return {
+          valid: false,
+          error: `题目 #${q.question_id} 存在选项缺少 id`,
+        };
+      }
+      if (!opt.text || !opt.text.trim()) {
+        return {
+          valid: false,
+          error: `题目 #${q.question_id} 选项 '${opt.id}' 缺少内容文本`,
+        };
+      }
+      if (hasHtmlTags(opt.text) || hasHtmlTags(opt.id)) {
+        return {
+          valid: false,
+          error: `题目 #${q.question_id} 的选项包含未过滤的 HTML 标签，已拒绝该请求`,
+        };
+      }
+    }
+  }
+
+  const rawAnswerValues = q.values ?? q.correct_answers;
+  const rawWrongs = q.wrong_answers;
+
+  // 3. Type-specific validation
+  if (q.type === "single" || q.type === "multiple") {
+    const effectiveOptions = q.options ?? existingOptions;
+    if (!effectiveOptions || effectiveOptions.length < 2) {
+      // If uploading answers for choice question, options are required (at least 2 options)
+      if (rawAnswerValues || rawWrongs) {
+        return {
+          valid: false,
+          error: `题目 #${q.question_id} (${q.type === "single" ? "单选题" : "多选题"}) 必须提供至少 2 个选项`,
+        };
+      }
+    } else {
+      // Check for duplicate option IDs
+      const optIdSet = new Set<string>();
+      for (const opt of effectiveOptions) {
+        const idTrimmed = opt.id.trim();
+        if (optIdSet.has(idTrimmed)) {
+          return {
+            valid: false,
+            error: `题目 #${q.question_id} 选项列表包含重复的选项 ID '${idTrimmed}'`,
+          };
+        }
+        optIdSet.add(idTrimmed);
+      }
+
+      // Validate correct answers
+      if (rawAnswerValues) {
+        if (!Array.isArray(rawAnswerValues)) {
+          return {
+            valid: false,
+            error: `题目 #${q.question_id} 答案必须为数组`,
+          };
+        }
+        if (rawAnswerValues.length === 0) {
+          return {
+            valid: false,
+            error: `题目 #${q.question_id} 答案数组不能为空，如无答案请传入 null`,
+          };
+        }
+
+        if (rawAnswerValues.length > effectiveOptions.length) {
+          return {
+            valid: false,
+            error: `题目 #${q.question_id} 答案项数量 (${rawAnswerValues.length}) 超过了可用选项数量 (${effectiveOptions.length})`,
+          };
+        }
+
+        // Check duplicate items in answer array
+        const seenAnswers = new Set<string>();
+        for (const item of rawAnswerValues) {
+          const s = String(item).trim();
+          if (seenAnswers.has(s)) {
+            return {
+              valid: false,
+              error: `题目 #${q.question_id} 答案数组包含重复项 '${s}'`,
+            };
+          }
+          seenAnswers.add(s);
+        }
+
+        // Verify each item is in options[].id (or matches option text)
+        const validIds = new Set(effectiveOptions.map((o) => o.id));
+        const validTexts = new Set(effectiveOptions.map((o) => o.text.trim()));
+        for (const item of rawAnswerValues) {
+          const s = String(item).trim();
+          const inId =
+            validIds.has(s) || [...validIds].some((id) => id.toLowerCase() === s.toLowerCase());
+          const inText = validTexts.has(s);
+          const prefixMatch = s.match(/^([A-Za-z0-9]+)[.、:：\s]/);
+          const inPrefix = prefixMatch && validIds.has(prefixMatch[1].toUpperCase());
+          if (!inId && !inText && !inPrefix) {
+            return {
+              valid: false,
+              error: `题目 #${q.question_id} 答案项 '${s}' 不在选项 options[].id 列表中 (有效选项: ${[...validIds].join(", ")})`,
+            };
+          }
+        }
+      }
+
+      // Validate wrong answers
+      if (rawWrongs) {
+        if (!Array.isArray(rawWrongs)) {
+          return {
+            valid: false,
+            error: `题目 #${q.question_id} 错误答案必须为数组`,
+          };
+        }
+        const seenWrongs = new Set<string>();
+        for (const item of rawWrongs) {
+          const s = String(item).trim();
+          if (seenWrongs.has(s)) {
+            return {
+              valid: false,
+              error: `题目 #${q.question_id} 错误答案数组包含重复项 '${s}'`,
+            };
+          }
+          seenWrongs.add(s);
+        }
+
+        const validIds = new Set(effectiveOptions.map((o) => o.id));
+        const validTexts = new Set(effectiveOptions.map((o) => o.text.trim()));
+        for (const item of rawWrongs) {
+          const s = String(item).trim();
+          const inId =
+            validIds.has(s) || [...validIds].some((id) => id.toLowerCase() === s.toLowerCase());
+          const inText = validTexts.has(s);
+          if (!inId && !inText) {
+            return {
+              valid: false,
+              error: `题目 #${q.question_id} 错误答案项 '${s}' 不在选项列表中 (有效选项: ${[...validIds].join(", ")})`,
+            };
+          }
+        }
+      }
+    }
+  } else if (q.type === "judge") {
+    // Judge question validation
+    if (rawAnswerValues) {
+      if (!Array.isArray(rawAnswerValues)) {
+        return {
+          valid: false,
+          error: `题目 #${q.question_id} 判断题答案必须为数组`,
+        };
+      }
+      if (rawAnswerValues.length !== 1) {
+        return {
+          valid: false,
+          error: `题目 #${q.question_id} 为判断题，答案必须有且仅有 1 个值（true/false），实际提供了 ${rawAnswerValues.length} 项`,
+        };
+      }
+      const val = normalizeJudgeValue(rawAnswerValues[0]);
+      if (val === null) {
+        return {
+          valid: false,
+          error: `题目 #${q.question_id} 判断题答案值 '${String(rawAnswerValues[0])}' 无效，必须为 true/false、'A'/'B' 或 '正确'/'错误'`,
+        };
+      }
+    }
+
+    if (rawWrongs) {
+      if (!Array.isArray(rawWrongs)) {
+        return {
+          valid: false,
+          error: `题目 #${q.question_id} 判断题错误答案必须为数组`,
+        };
+      }
+      const seenJudgeWrongs = new Set<boolean>();
+      for (const item of rawWrongs) {
+        const val = normalizeJudgeValue(item);
+        if (val === null) {
+          return {
+            valid: false,
+            error: `题目 #${q.question_id} 判断题错误答案值 '${String(item)}' 无效，必须为 true/false、'A'/'B' 或 '正确'/'错误'`,
+          };
+        }
+        if (seenJudgeWrongs.has(val)) {
+          return {
+            valid: false,
+            error: `题目 #${q.question_id} 判断题错误答案数组包含重复项`,
+          };
+        }
+        seenJudgeWrongs.add(val);
+      }
+    }
+  } else if (q.type === "text") {
+    // Fill-in-the-blank (text) validation
+    if (q.options && q.options.length > 0) {
+      return {
+        valid: false,
+        error: `题目 #${q.question_id} 为填空题，不应包含 options 选项列表`,
+      };
+    }
+
+    if (rawAnswerValues) {
+      if (!Array.isArray(rawAnswerValues)) {
+        return {
+          valid: false,
+          error: `题目 #${q.question_id} 填空题答案必须为数组`,
+        };
+      }
+      if (rawAnswerValues.length === 0) {
+        return {
+          valid: false,
+          error: `题目 #${q.question_id} 填空题答案数组不能为空，如无答案请传入 null`,
+        };
+      }
+
+      // Check each item is non-empty
+      for (let i = 0; i < rawAnswerValues.length; i++) {
+        const val = String(rawAnswerValues[i]).trim();
+        if (!val) {
+          return {
+            valid: false,
+            error: `题目 #${q.question_id} 填空题第 ${i + 1} 空答案不能为空字符串`,
+          };
+        }
+      }
+
+      // If blanks count is explicitly declared and > 0, length must match
+      if (q.blanks != null && q.blanks > 0 && rawAnswerValues.length !== q.blanks) {
+        return {
+          valid: false,
+          error: `题目 #${q.question_id} 填空题声明空数 (${q.blanks}) 与提供的答案数组长度 (${rawAnswerValues.length}) 不一致`,
+        };
+      }
+    }
+  }
+
+  return { valid: true };
+}
+
+const AnswerItemSchema = t.Union([t.String(), t.Boolean(), t.Number()]);
 
 const QuestionSchema = t.Object({
   question_id: t.String(),
@@ -19,8 +394,9 @@ const QuestionSchema = t.Object({
   ),
   options: t.Optional(t.Array(t.Object({ id: t.String(), text: t.String() }))),
   blanks: t.Optional(t.Number()),
-  correct_answers: t.Optional(t.Array(t.String())),
-  wrong_answers: t.Optional(t.Array(t.String())),
+  correct_answers: t.Optional(t.Array(AnswerItemSchema)),
+  wrong_answers: t.Optional(t.Array(AnswerItemSchema)),
+  values: t.Optional(t.Array(AnswerItemSchema)),
 });
 
 const BatchUploadSchema = t.Object({
@@ -51,14 +427,34 @@ async function resolveSession(request: Request): Promise<{
 
 export const uploadRoutes = new Elysia({ prefix: "/upload" }).post(
   "/batch",
-  async ({ body, request }) => {
+  async ({ body, request, set }) => {
+    const { tid, cid, questions: inputQuestions } = body;
+    const courseId = cid ?? tid; // fallback: use tid as cid if not provided
+
+    // 0. Comprehensive validation for each question: type, HTML tags, options, and answers
+    for (const q of inputQuestions) {
+      let existingOptions: { id: string; text: string }[] | null | undefined = undefined;
+      if (!q.options && (q.type === "single" || q.type === "multiple")) {
+        const existing = await db.query.questions.findFirst({
+          where: and(eq(questions.tid, tid), eq(questions.questionId, q.question_id)),
+        });
+        existingOptions = existing?.options as { id: string; text: string }[] | null;
+      }
+
+      const valResult = validateQuestionUpload(q, existingOptions);
+      if (!valResult.valid) {
+        set.status = 400;
+        return {
+          ok: false,
+          error: valResult.error,
+        };
+      }
+    }
+
     const sessionInfo = await resolveSession(request);
     const userId = sessionInfo.userId;
     const isAnonymous = sessionInfo.isAnonymous;
     const source = "plugin";
-
-    const { tid, cid, questions: inputQuestions } = body;
-    const courseId = cid ?? tid; // fallback: use tid as cid if not provided
 
     // Upsert course
     await db
@@ -91,6 +487,24 @@ export const uploadRoutes = new Elysia({ prefix: "/upload" }).post(
     }[] = [];
 
     for (const q of inputQuestions) {
+      // Determine standardized options and blanks
+      let questionOptions = q.options ?? null;
+      if (q.type === "judge") {
+        // 判断题永远固定只有 A. 正确 和 B. 错误 两个选项
+        questionOptions = JUDGE_OPTIONS;
+      }
+
+      const rawAnswerValues = q.values ?? q.correct_answers;
+      let questionBlanks = q.blanks ?? 0;
+      if (
+        q.type === "text" &&
+        (!questionBlanks || questionBlanks === 0) &&
+        rawAnswerValues &&
+        rawAnswerValues.length > 0
+      ) {
+        questionBlanks = rawAnswerValues.length;
+      }
+
       // Prefer a plugin-provided vector. Only ask the server-side model when
       // the plugin omitted one and embedding generation is configured.
       const embedding = await resolveEmbedding(q.stem, q.embedding);
@@ -133,15 +547,20 @@ export const uploadRoutes = new Elysia({ prefix: "/upload" }).post(
       if (existing) {
         questionInternalId = existing.id;
 
-        // Enrich with stem/options if newly provided
+        // Enrich with stem/options/blanks if newly provided
         const updates: Record<string, unknown> = { updatedAt: new Date() };
         if (q.stem && !existing.stem) {
           updates.stem = q.stem;
           updates.stemHash = hashStem(q.stem);
         }
         if (embedding && !existing.stemEmbedding) updates.stemEmbedding = embedding;
-        if (q.options && !existing.options) {
-          updates.options = q.options;
+        if (q.type === "judge") {
+          if (!existing.options) updates.options = JUDGE_OPTIONS;
+        } else if (questionOptions && !existing.options) {
+          updates.options = questionOptions;
+        }
+        if (q.type === "text" && existing.blanks === 0 && questionBlanks > 0) {
+          updates.blanks = questionBlanks;
         }
 
         await db.update(questions).set(updates).where(eq(questions.id, existing.id));
@@ -158,17 +577,58 @@ export const uploadRoutes = new Elysia({ prefix: "/upload" }).post(
             stem: q.stem ?? null,
             stemHash,
             stemEmbedding: embedding,
-            options: q.options ?? null,
-            blanks: q.blanks ?? 0,
+            options: questionOptions,
+            blanks: questionBlanks,
           })
           .returning({ id: questions.id });
         questionInternalId = inserted!.id;
       }
 
       // ── Step 2: Handle answers ──
+      const effectiveOptions = (questionOptions ?? existing?.options) as
+        | { id: string; text: string }[]
+        | null;
+
+      let toSaveCorrect: unknown[] | null = null;
+      let toSaveWrongs: unknown[] = [];
+
+      if (q.type === "judge") {
+        // 判断题：永远只有 A. 正确、B. 错误两个选项，以唯一的 boolean 项存储
+        if (rawAnswerValues && rawAnswerValues.length > 0) {
+          for (const item of rawAnswerValues) {
+            const b = normalizeJudgeValue(item);
+            if (b !== null) {
+              toSaveCorrect = [b];
+              break;
+            }
+          }
+        }
+        if (q.wrong_answers && q.wrong_answers.length > 0) {
+          for (const item of q.wrong_answers) {
+            const b = normalizeJudgeValue(item);
+            if (b !== null && !toSaveWrongs.includes(b)) {
+              toSaveWrongs.push(b);
+            }
+          }
+        }
+      } else if (q.type === "single" || q.type === "multiple") {
+        // 单选、多选题：仅保存对应 options[].id 值的选项，而不是保存实际的答案文本内容
+        const chosen = normalizeChoiceAnswers(rawAnswerValues ?? [], effectiveOptions);
+        toSaveCorrect = chosen.length > 0 ? chosen : null;
+        toSaveWrongs = normalizeChoiceAnswers(q.wrong_answers ?? [], effectiveOptions);
+      } else {
+        // 填空题 (text) 及其他题型：values[] 数组，其标号对应该题目提供的填空的空数
+        if (rawAnswerValues && rawAnswerValues.length > 0) {
+          toSaveCorrect = rawAnswerValues.map((v) => String(v));
+        }
+        if (q.wrong_answers && q.wrong_answers.length > 0) {
+          toSaveWrongs = q.wrong_answers.map((v) => String(v));
+        }
+      }
+
       let action = "no_change";
 
-      if (q.correct_answers && q.correct_answers.length > 0) {
+      if (toSaveCorrect && toSaveCorrect.length > 0) {
         // Check if a correct answer already exists
         const existingCorrect = await db.query.answers.findFirst({
           where: and(eq(answers.questionId, questionInternalId), eq(answers.isCorrect, true)),
@@ -187,7 +647,7 @@ export const uploadRoutes = new Elysia({ prefix: "/upload" }).post(
           await db
             .update(answers)
             .set({
-              values: q.correct_answers,
+              values: toSaveCorrect,
               source,
               submittedBy: userId,
               confidence: 1.0,
@@ -199,7 +659,7 @@ export const uploadRoutes = new Elysia({ prefix: "/upload" }).post(
           // Insert new correct answer
           await db.insert(answers).values({
             questionId: questionInternalId,
-            values: q.correct_answers,
+            values: toSaveCorrect,
             source,
             submittedBy: userId,
             isCorrect: true,
@@ -214,7 +674,7 @@ export const uploadRoutes = new Elysia({ prefix: "/upload" }).post(
           .where(and(eq(answers.questionId, questionInternalId), eq(answers.isCorrect, false)));
       }
 
-      if (q.wrong_answers && q.wrong_answers.length > 0) {
+      if (toSaveWrongs.length > 0) {
         // Only add wrong answers if there's no correct answer yet
         const hasCorrect = await db.query.answers.findFirst({
           where: and(eq(answers.questionId, questionInternalId), eq(answers.isCorrect, true)),
@@ -222,7 +682,7 @@ export const uploadRoutes = new Elysia({ prefix: "/upload" }).post(
 
         if (!hasCorrect) {
           // Upsert wrong answer exclusions
-          for (const wrongVal of q.wrong_answers) {
+          for (const wrongVal of toSaveWrongs) {
             // Check if this wrong answer already exists
             const existingWrong = await db.query.answers.findFirst({
               where: and(
