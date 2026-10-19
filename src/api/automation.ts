@@ -222,7 +222,7 @@ export const automationRoutes = new Elysia({ prefix: "/automation" })
         return {
           ok: false,
           error:
-            "Failed to resolve embedding: either supply a 1536-dim vector or configure server embedding model",
+            "Failed to resolve embedding: either supply a 512-dim vector or configure server embedding model",
         };
       }
 

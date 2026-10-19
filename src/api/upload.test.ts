@@ -42,7 +42,7 @@ vi.mock("@/lib/auth", () => ({
 }));
 
 vi.mock("@/lib/embedding", () => ({
-  EMBEDDING_DIMENSIONS: 1536,
+  EMBEDDING_DIMENSIONS: 512,
   resolveEmbedding: vi.fn().mockResolvedValue(null),
 }));
 

@@ -372,7 +372,15 @@ GET /api/courses/{cid}/tasks/{tid}
 
 当题组内按 `question_id` 未直接命中时，插件可通过全局题库语义搜索接口 `/api/questions/search` 查找跨题组或往年同源题。
 
-若插件本地运行小模型或具备向量计算能力，**强烈建议直接在 `POST /api/questions/search` 请求体中附带 1536 维向量**（构建向量时，**应当将题目题干与它的选项一并计算向量**，可极大提升语义搜索的精准度与命中率）：
+平台统一采用 **`bge-small-zh-v1.5`（512 维）** 作为全链路的词向量模型标准。若插件本地运行小模型（如通过 `@xenova/transformers`、`onnxruntime-web` 或原生推理）或具备向量计算能力，**强烈建议直接在 `POST /api/questions/search` 请求体中附带 512 维向量**（构建向量时，**应当将题目题干与它的选项一并计算向量**，可极大提升语义搜索的精准度与命中率）：
+
+> **模型下载与技术规范**：
+>
+> - 模型：`bge-small-zh-v1.5`（Hugging Face: `Xenova/bge-small-zh-v1.5` / `BAAI/bge-small-zh-v1.5`）
+> - 向量维度：**512 维**（L2 归一化单位向量）
+> - 量化 ONNX 文件：`onnx/model_quantized.onnx`（约 22.9 MB / 24,010,842 字节）
+> - SHA-256：`15b717c382bcb518ba457b93ea6850ede7f4f1cd8937454aa06972366cd19bcc`
+> - 下载 URL：`https://huggingface.co/Xenova/bge-small-zh-v1.5/resolve/main/onnx/model_quantized.onnx`
 
 ```http
 POST /api/questions/search
@@ -384,12 +392,12 @@ Content-Type: application/json
     { "id": "A", "text": "选项A" },
     { "id": "B", "text": "选项B" }
   ],
-  "embedding": [0.0123, 0.0456, "... (共1536维浮点数)"],
+  "embedding": [0.0123, 0.0456, "... (基于 bge-small-zh-v1.5 的共512维浮点数)"],
   "limit": 5
 }
 ```
 
-- **零服务端模型开销**：服务端检测到已提供符合要求的 1536 维向量后，直接调用 pgvector 执行余弦相似度计算，**完全跳过服务端 embedding 模型生成**，响应通常在 10ms~30ms 内完成。
+- **零服务端模型开销**：服务端检测到已提供符合要求的 512 维向量后，直接调用 pgvector 执行余弦相似度计算，**完全跳过服务端 embedding 模型生成**，响应通常在 10ms~30ms 内完成。
 - **自动降级支持**：若未附带 `embedding`，服务端在配置有 Embedding API 时会自动生成向量（服务端会自动将 `q` 和 `options` 选项一并计算向量），未配置时自动降级为 ILIKE 模糊文本检索。
 
 ---
@@ -527,7 +535,7 @@ x-api-key: uooc_... (可选)
 > - **单选/多选题答案**：仅需保存对应 `options[].id` 值的选项（如 `["C"]` 或 `["A", "C"]`），严禁/不再保存实际选项文本内容（因为选项内容已经在 `options[].text` 中保存）。若客户端传入了选项文本，服务端也会自动比对转换为选项 ID。
 > - **判断题规范**：永远只有 `A. 正确`、`B. 错误` 两个选项，答案统一以唯一的 boolean 项存储（正确为 `[true]`，错误为 `[false]`）。
 > - **填空题规范**：支持上传 `values[]` 数组，其标号（0, 1...）严格对应该题目提供的填空的空数，题目的 `blanks` 对应填空总空数。
-> - `embedding` 为可选字段，必须是与服务端 `vector(1536)` 兼容的 1536 维数字数组。插件已生成词向量时，建议随题目一并上传；服务端优先使用该向量。**为提高搜索命中率，客户端构建向量时应当将题干和选项一并计算向量**。
+> - `embedding` 为可选字段，必须是与服务端 `vector(512)` 兼容的 512 维数字数组（统一使用 `bge-small-zh-v1.5` 模型计算）。插件已生成词向量时，建议随题目一并上传；服务端优先使用该向量。**为提高搜索命中率，客户端构建向量时应当将题干和选项一并计算向量**。
 > - 未提供 `embedding` 时，服务端仅在配置 `EMBEDDING_API_URL` 与 `EMBEDDING_API_KEY` 后才调用模型生成（自动将题干与选项一并构建向量）；未配置时不会发起模型请求，继续使用文本匹配回退。
 > - 一旦某题目成功录入 `correct_answers`，服务端会自动清理该题目之前存储的全部错误答案排除记录。
 > - 如果同一道题目已有正确答案，匿名用户上传会被忽略（`denied_anonymous_overwrite`），通过 OAuth 登录的用户则可直接更新覆盖。
@@ -576,7 +584,7 @@ x-api-key: uooc_...
 
 - 服务端会根据当前 API Key 权限级别，仅返回该账号能执行的任务（例如匿名 Key 会返回 `stem_request` 与 `embedding_request`）。
 - **题干缺失任务 (`stem_request`)**：当插件发现本地缓存或当前页面有题干文本时，直接调用 `POST /api/automation/tasks/stem` 提交回填。
-- **向量计算任务 (`embedding_request`)**：对于有本地 embedding 运行能力的客户端，直接计算 1536 维向量并通过 `POST /api/automation/tasks/embedding` 回传，降低中心服务器计算负载。
+- **向量计算任务 (`embedding_request`)**：对于有本地 embedding 运行能力的客户端，直接基于统一模型 `bge-small-zh-v1.5` 计算 512 维向量并通过 `POST /api/automation/tasks/embedding` 回传，降低中心服务器计算负载。
 
 ### 5.4 本地题库 ID 表匹配与缺失确认 (Bank Matching)
 
@@ -705,7 +713,7 @@ function buildEmbeddingText(stem, options) {
   return parts.join("\n");
 }
 
-// generateEmbedding 由插件使用自己的词向量模型实现；返回值必须是 1536 维数组。
+// generateEmbedding 必须使用统一模型 bge-small-zh-v1.5 实现；返回值必须是 512 维数组。
 async function addEmbeddings(questions, generateEmbedding) {
   return Promise.all(
     questions.map(async (question) => {
@@ -861,19 +869,19 @@ if (quizPassed) {
   await uploadTaskResults({
     tid,
     cid: courseId,
-    // pluginEmbedding 是插件选择的词向量生成器；每个返回值必须是 1536 维数组。
+    // pluginEmbedding 必须使用统一模型 bge-small-zh-v1.5；每个返回值必须是 512 维数组。
     questions: await addEmbeddings(recordedList, pluginEmbedding),
   });
 }
 ```
 
-`recordedAnswersList` 中的每道题也可以附带插件生成的 `embedding` 字段。上例中的 JSON 仅展示数组前几项，实际字段必须是 1536 维数字数组；服务端会优先保存并用于语义匹配。
+`recordedAnswersList` 中的每道题也可以附带插件生成的 `embedding` 字段。上例中的 JSON 仅展示数组前几项，实际字段必须是基于 `bge-small-zh-v1.5` 计算的 512 维数字数组；服务端会优先保存并用于语义匹配。
 
 ---
 
 ## 7. 项目集成实战：your-szu-life (TypeScript / Rust)
 
-针对 `/home/rinne/project/your-szu-life` 项目，可在 Tauri 后端 `src-tauri/src/uooc/quiz/` 中引入 HTTP 客户端调用，或在前端 `src/uooc/QuizPanel.tsx` 中增加自动载入与上报能力。
+针对 `/home/rinne/project/your-szu-life` 项目，可在 Tauri 后端 `src-tauri/src/uooc/quiz/` 中引入 HTTP 客户端调用，或在前端 `src/uooc/QuizPanel.tsx` 中增加自动载入与上报能力。该项目已在 `src-tauri/resources/embedding/bge-small-zh-v1.5/model.json` 中配置了统一的 `bge-small-zh-v1.5` ONNX 量化模型元数据，支持本地离线直接加载推理计算 512 维向量。
 
 ### 7.1 设置面板 OAuth 登录与匿名自动降级逻辑
 

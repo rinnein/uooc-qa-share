@@ -23,7 +23,7 @@ vi.mock("@/lib/embedding", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/embedding")>();
   return {
     ...actual,
-    EMBEDDING_DIMENSIONS: 1536,
+    EMBEDDING_DIMENSIONS: 512,
     generateEmbedding: mockGenerateEmbedding,
   };
 });
@@ -35,7 +35,7 @@ describe("searchQuestionsInternal", () => {
     mockGenerateEmbedding.mockClear();
     mockDb.execute.mockResolvedValueOnce([{ id: 1, stem: "测试题干" }]);
 
-    const clientVector = Array.from({ length: 1536 }, (_, i) => i / 1536);
+    const clientVector = Array.from({ length: 512 }, (_, i) => i / 512);
 
     const result = await searchQuestionsInternal({
       q: "任意关键词",
@@ -50,7 +50,7 @@ describe("searchQuestionsInternal", () => {
 
   it("calls generateEmbedding on server when no client vector is supplied", async () => {
     mockGenerateEmbedding.mockClear();
-    const serverVector = Array.from({ length: 1536 }, () => 0.1);
+    const serverVector = Array.from({ length: 512 }, () => 0.1);
     mockGenerateEmbedding.mockResolvedValueOnce(serverVector);
     mockDb.execute.mockResolvedValueOnce([{ id: 2, stem: "服务端计算题干" }]);
 
@@ -65,7 +65,7 @@ describe("searchQuestionsInternal", () => {
 
   it("calls generateEmbedding on server with stem and options combined when options are supplied", async () => {
     mockGenerateEmbedding.mockClear();
-    const serverVector = Array.from({ length: 1536 }, () => 0.1);
+    const serverVector = Array.from({ length: 512 }, () => 0.1);
     mockGenerateEmbedding.mockResolvedValueOnce(serverVector);
     mockDb.execute.mockResolvedValueOnce([{ id: 4, stem: "题目带选项" }]);
 

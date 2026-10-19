@@ -105,7 +105,7 @@ export const auth = betterAuth({
         {
           name: "search_questions",
           description:
-            "Search questions by stem text, options, or semantic query, optionally supplying a precomputed 1536-dim vector",
+            "Search questions by stem text, options, or semantic query, optionally supplying a precomputed 512-dim vector (bge-small-zh-v1.5)",
           input: {
             type: "object",
             properties: {

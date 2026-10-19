@@ -1,6 +1,6 @@
 import { env } from "@/lib/env";
 
-export const EMBEDDING_DIMENSIONS = 1536;
+export const EMBEDDING_DIMENSIONS = 512;
 
 export interface OptionItem {
   id?: string;

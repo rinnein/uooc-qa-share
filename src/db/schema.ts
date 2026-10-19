@@ -55,7 +55,7 @@ export const questions = pgTable(
     type: text("type").notNull(), // 'single' | 'multiple' | 'judge' | 'text'
     stem: text("stem"),
     stemHash: text("stem_hash"),
-    stemEmbedding: vector("stem_embedding", { dimensions: 1536 }),
+    stemEmbedding: vector("stem_embedding", { dimensions: 512 }),
     options: jsonb("options"), // [{id, text}]
     blanks: integer("blanks").notNull().default(0),
     createdAt: timestamp("created_at").notNull().defaultNow(),

@@ -73,7 +73,7 @@ describe("embedding resolution", () => {
   });
 
   it("calls the configured server model when no client vector is supplied", async () => {
-    const serverEmbedding = Array.from({ length: 1536 }, (_, index) => index / 1536);
+    const serverEmbedding = Array.from({ length: 512 }, (_, index) => index / 512);
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({ data: [{ embedding: serverEmbedding }] }),
@@ -89,7 +89,7 @@ describe("embedding resolution", () => {
   });
 
   it("calls the configured server model combining stem and options", async () => {
-    const serverEmbedding = Array.from({ length: 1536 }, (_, index) => index / 1536);
+    const serverEmbedding = Array.from({ length: 512 }, (_, index) => index / 512);
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({ data: [{ embedding: serverEmbedding }] }),

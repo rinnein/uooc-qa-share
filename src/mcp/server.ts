@@ -3,7 +3,7 @@ import { z } from "zod";
 import { db } from "@/db";
 import { taskGroups, questions, answers } from "@/db/schema";
 import { eq, sql } from "drizzle-orm";
-import { buildEmbeddingText, generateEmbedding } from "@/lib/embedding";
+import { buildEmbeddingText, EMBEDDING_DIMENSIONS, generateEmbedding } from "@/lib/embedding";
 import { env } from "@/lib/env";
 
 export function createMcpServer() {
@@ -104,7 +104,7 @@ JSON 格式规范：
   // Search questions by stem text, options, or precomputed vector
   server.tool(
     "search_questions",
-    "按题干内容、选项或向量搜索题目。若传入符合要求的 1536 维向量，直接进行向量比对而无需在服务端生成向量。若未传入向量，将一并计算题干与选项的向量以提升搜索命中率。返回匹配的题目及其答案。",
+    "按题干内容、选项或向量搜索题目。若传入符合要求的 512 维向量（基于统一 bge-small-zh-v1.5 模型），直接进行向量比对而无需在服务端生成向量。若未传入向量，将一并计算题干与选项的向量以提升搜索命中率。返回匹配的题目及其答案。",
     {
       query: z.string().optional().describe("搜索关键词或题干文本"),
       options: z
@@ -118,14 +118,15 @@ JSON 格式规范：
         .describe("可选的选项列表，计算向量时将与题干一并计算以提高命中率"),
       embedding: z
         .array(z.number())
-        .length(1536)
+        .length(EMBEDDING_DIMENSIONS)
         .optional()
         .describe(
-          "可选的本地预先计算好的 1536 维词向量，传入时将直接使用该向量进行相似度检索，跳过服务端向量生成",
+          "可选的本地预先计算好的 512 维词向量（基于 bge-small-zh-v1.5），传入时将直接使用该向量进行相似度检索，跳过服务端向量生成",
         ),
     },
     async ({ query, options, embedding }) => {
-      let finalEmbedding = embedding && embedding.length === 1536 ? embedding : null;
+      let finalEmbedding =
+        embedding && embedding.length === EMBEDDING_DIMENSIONS ? embedding : null;
       if (!finalEmbedding && (query || (options && options.length > 0))) {
         const textToEmbed = buildEmbeddingText(query, options);
         if (textToEmbed) {
@@ -309,14 +310,14 @@ JSON 格式规范：
   // Fulfill missing embedding calculation request
   server.tool(
     "fulfill_embedding_task",
-    "为题目生成或写入 1536 维向量嵌入",
+    "为题目生成或写入 512 维向量嵌入（基于统一 bge-small-zh-v1.5 模型）",
     {
       question_id: z.string().describe("内部题目 ID 或 UOOC 题号"),
       embedding: z
         .array(z.number())
-        .length(1536)
+        .length(EMBEDDING_DIMENSIONS)
         .optional()
-        .describe("可选的 1536 维向量数组（若未提供，服务端将尝试调用配置的模型计算）"),
+        .describe("可选的 512 维向量数组（若未提供，服务端将尝试调用配置的模型计算）"),
     },
     async ({ question_id, embedding }) => {
       try {

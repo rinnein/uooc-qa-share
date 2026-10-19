@@ -40,7 +40,7 @@ export const env = createEnv({
 
     EMBEDDING_API_URL: z.string().url().optional(),
     EMBEDDING_API_KEY: z.string().optional(),
-    EMBEDDING_MODEL: z.string().default("text-embedding-3-small"),
+    EMBEDDING_MODEL: z.string().default("BAAI/bge-small-zh-v1.5"),
 
     CORS_ORIGINS: z
       .string()
