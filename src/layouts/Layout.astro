@@ -1,6 +1,7 @@
 ---
 import "@/styles/globals.css";
 import NavbarAuth from "@/components/NavbarAuth";
+import { ClientRouter } from "astro:transitions";
 
 interface Props {
   title?: string;
@@ -8,6 +9,13 @@ interface Props {
 
 const { title = "UOOC QA Share" } = Astro.props;
 const pathname = Astro.url.pathname;
+
+const currentUser = Astro.locals.user;
+const currentSession = Astro.locals.session;
+const serverSession =
+  currentUser && currentSession
+    ? { user: currentUser, session: currentSession }
+    : null;
 
 const navItems = [
   {
@@ -50,15 +58,31 @@ const navItems = [
     <link rel="icon" href="/favicon.ico" />
     <meta name="generator" content={Astro.generator} />
     <title>{title}</title>
+    <ClientRouter />
     <script is:inline>
-      // Webview / URL API Key auto-injection and persistence
+      // Webview / URL API Key auto-injection, persistence, and logout suppression
       (function () {
         try {
           var url = new URL(window.location.href);
-          var apiKey = url.searchParams.get("apiKey") || url.searchParams.get("api_key");
+          var urlApiKey = url.searchParams.get("apiKey") || url.searchParams.get("api_key");
+          var isLoggedOut = localStorage.getItem("uooc_logged_out") === "true";
+          var loggedOutKey = localStorage.getItem("uooc_logged_out_key");
 
-          if (!apiKey && window.__UOOC_API_KEY__) {
-            apiKey = window.__UOOC_API_KEY__;
+          var apiKey = urlApiKey;
+
+          // If a new apiKey was passed via URL parameter, reset logout suppression
+          if (urlApiKey) {
+            localStorage.removeItem("uooc_logged_out");
+            localStorage.removeItem("uooc_logged_out_key");
+          } else if (window.__UOOC_API_KEY__) {
+            // If injected via window.__UOOC_API_KEY__, check if user explicitly logged out of this key
+            if (isLoggedOut && loggedOutKey === window.__UOOC_API_KEY__) {
+              apiKey = null;
+            } else {
+              localStorage.removeItem("uooc_logged_out");
+              localStorage.removeItem("uooc_logged_out_key");
+              apiKey = window.__UOOC_API_KEY__;
+            }
           }
 
           if (apiKey) {
@@ -103,7 +127,7 @@ const navItems = [
           }
         </nav>
         <div class="ml-auto shrink-0">
-          <NavbarAuth client:load />
+          <NavbarAuth client:load initialSession={serverSession} transition:persist />
         </div>
       </div>
     </header>
@@ -112,3 +136,4 @@ const navItems = [
     </main>
   </body>
 </html>
+

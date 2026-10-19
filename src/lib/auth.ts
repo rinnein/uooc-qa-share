@@ -19,6 +19,10 @@ export const auth = betterAuth({
   session: {
     expiresIn: 60 * 60 * 24 * 31, // 31 days
     updateAge: 60 * 60 * 24, // 1 day
+    cookieCache: {
+      enabled: true,
+      maxAge: 5 * 60, // 5 minutes
+    },
   },
   trustedOrigins: (request) => {
     const list = getTrustedOriginsList();

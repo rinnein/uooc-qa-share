@@ -224,12 +224,76 @@
 
 ---
 
-### 2.6 客户端软件内部 Webview 免密集成
+### 2.6 客户端软件内部 Webview 免密集成与退出登录协同设计
 
 对于如 `your-szu-life` 等拥有独立桌面/手机客户端的插件，若希望在客户端内部以 Webview 展示题库前端界面：
 
+#### 2.6.1 自动注入登录方案
+
 - **方案 A（URL 传参自动登录）**：Webview 打开 `http://your-qa-server.com/?apiKey=uooc_8a9f...`，前端与服务端中间件会自动完成登录、写入长效 Cookie 并自动擦除 URL 中的敏感参数。
 - **方案 B（窗口对象注入）**：在 Webview 初始化脚本中注入 `window.__UOOC_API_KEY__ = "uooc_8a9f...";`，前端启动时自动挂载登录态。
+
+#### 2.6.2 退出登录设计与宿主协同机制
+
+在 Webview 或浏览器插件注入场景下，如果仅通过常规 OAuth 会话退出，会导致退出登录“无效”的假死现象，其根因在于：
+
+1. **凭证残留**：通过 API Key 登录后，凭证已持久化在 `localStorage.uooc_api_key` 和浏览器 Cookie 中，仅调用基础 `signOut()` 不会清理插件专用的 API Key 存储；
+2. **Webview 反复重注入**：Webview 的初始化脚本在页面刷新或重载时会再次向 `window.__UOOC_API_KEY__` 注入凭证，导致用户点击退出刷新页面后立刻被重新自动登录。
+
+为此平台设计了完整的端到端退出登录协议：
+
+##### 1. 平台前端与服务端的退出处理
+
+当用户在导航栏右上角点击 **“退出”** 时，平台会依次执行：
+
+- **防重登抑制标记**：在本地存储标记 `localStorage.setItem("uooc_logged_out", "true")`，并记录已登出的凭据 `uooc_logged_out_key`。后续页面即便重新读取到该 `window.__UOOC_API_KEY__`，也会主动跳过自动注入；
+- **清理本地凭证与缓存**：同步清除 `localStorage.uooc_api_key` 以及 `sessionStorage` 中的会话缓存（`uooc_session_cache`）；
+- **服务端 Cookie 失效**：向浏览器和服务端注销 Cookie，将 `apiKey`、`uooc_api_key` 与 `session_data` 的 `Max-Age` 置为 0；
+- **多通道通知宿主插件**：向宿主环境广播登出事件；
+- **注销服务端 Session**：调用 Better Auth `signOut()` 注销当前设备会话。
+
+##### 2. 宿主插件与客户端协同规范
+
+客户端软件（如 Tauri、Electron 或油猴脚本）应主动监听退出事件，保持客户端状态与 Webview 同步：
+
+- **机制 1：监听 DOM 自定义事件**
+
+  ```javascript
+  window.addEventListener("uooc:logout", (event) => {
+    console.log("[插件] 收到题库平台主动退出通知，登出Key:", event.detail?.apiKey);
+    // 客户端可在此清理本地保存的 QA_SERVER_API_KEY 或更新设置面板状态
+  });
+  ```
+
+- **机制 2：挂载全局退出回调钩子**
+
+  在 Webview 初始化时，插件可在 window 上挂载：
+
+  ```javascript
+  window.__UOOC_ON_LOGOUT__ = function ({ apiKey }) {
+    console.log("[插件] 用户在网页内退出了登录:", apiKey);
+    // 触发客户端本地登出逻辑
+  };
+  ```
+
+- **机制 3：Iframe / 父子窗口通信 (postMessage)**
+
+  当 Webview 以 iframe 形式嵌入宿主页面时，宿主可监听标准 Message：
+
+  ```javascript
+  window.addEventListener("message", (event) => {
+    if (event.data?.type === "uooc:logout") {
+      console.log("[宿主] 检测到 iframe 题库平台登出事件");
+    }
+  });
+  ```
+
+##### 3. 重新激活登录
+
+当用户在宿主客户端重新点击“连接/登录题库”或更新了 API Key 时：
+
+- 若通过 **URL 传参** 打开（`?apiKey=new_key`），平台检测到明确的 URL 参数时会**自动解除登出抑制状态**并完成重新登录；
+- 若通过 **窗口注入** 传入了**不同的新 Key**，平台比对发现与此前登出的 `uooc_logged_out_key` 不一致，也会自动恢复登录。
 
 ---
 
