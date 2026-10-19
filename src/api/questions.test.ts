@@ -19,10 +19,14 @@ vi.mock("@/db", () => ({
   db: mockDb,
 }));
 
-vi.mock("@/lib/embedding", () => ({
-  EMBEDDING_DIMENSIONS: 1536,
-  generateEmbedding: mockGenerateEmbedding,
-}));
+vi.mock("@/lib/embedding", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/embedding")>();
+  return {
+    ...actual,
+    EMBEDDING_DIMENSIONS: 1536,
+    generateEmbedding: mockGenerateEmbedding,
+  };
+});
 
 import { searchQuestionsInternal } from "./questions";
 
@@ -56,6 +60,25 @@ describe("searchQuestionsInternal", () => {
 
     expect(result.results).toEqual([{ id: 2, stem: "服务端计算题干" }]);
     expect(mockGenerateEmbedding).toHaveBeenCalledWith("需服务端计算的文本");
+    expect(mockDb.execute).toHaveBeenCalledOnce();
+  });
+
+  it("calls generateEmbedding on server with stem and options combined when options are supplied", async () => {
+    mockGenerateEmbedding.mockClear();
+    const serverVector = Array.from({ length: 1536 }, () => 0.1);
+    mockGenerateEmbedding.mockResolvedValueOnce(serverVector);
+    mockDb.execute.mockResolvedValueOnce([{ id: 4, stem: "题目带选项" }]);
+
+    const result = await searchQuestionsInternal({
+      q: "题目题干",
+      options: [
+        { id: "A", text: "选项内容A" },
+        { id: "B", text: "选项内容B" },
+      ],
+    });
+
+    expect(result.results).toEqual([{ id: 4, stem: "题目带选项" }]);
+    expect(mockGenerateEmbedding).toHaveBeenCalledWith("题目题干\nA. 选项内容A\nB. 选项内容B");
     expect(mockDb.execute).toHaveBeenCalledOnce();
   });
 

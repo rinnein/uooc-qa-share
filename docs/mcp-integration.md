@@ -49,9 +49,10 @@ UOOC QA Share 平台内置了基于 Streamable HTTP 协议的高性能 MCP（Mod
 
 ### 3.1 `search_questions`
 
-- **描述**：按题干关键词或语义向量搜索题库中的题目及其答案。支持基于 PostgreSQL pgvector 的词向量语义检索与 ILIKE 文本模糊回退。若客户端传入本地计算的 1536 维向量，服务端直接进行相似度检索，不调用服务端 embedding 模型。
+- **描述**：按题干关键词、选项或语义向量搜索题库中的题目及其答案。支持基于 PostgreSQL pgvector 的词向量语义检索与 ILIKE 文本模糊回退。若客户端传入本地计算的 1536 维向量，服务端直接进行相似度检索；若未传入向量，服务端将一并结合题干与选项计算向量以提升检索命中率。
 - **参数**：
-  - `query` (string, optional): 搜索内容或关键词。
+  - `query` (string, optional): 搜索内容或题干关键词。
+  - `options` (array of objects, optional): 选项列表 `[{ id, text }]`，若提供将与题干一并计算向量以提高语义搜索命中率。
   - `embedding` (array of numbers, optional): 本地计算的 1536 维词向量。传入时跳过服务端向量计算，直接进行向量相似度匹配。
 
 ### 3.2 `get_task_answers`

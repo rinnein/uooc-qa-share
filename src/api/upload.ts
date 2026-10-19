@@ -507,7 +507,8 @@ export const uploadRoutes = new Elysia({ prefix: "/upload" }).post(
 
       // Prefer a plugin-provided vector. Only ask the server-side model when
       // the plugin omitted one and embedding generation is configured.
-      const embedding = await resolveEmbedding(q.stem, q.embedding);
+      // Include question options along with stem to significantly improve search hit rate.
+      const embedding = await resolveEmbedding(q.stem, questionOptions, q.embedding);
 
       // ── Step 1: Find or create question ──
       // 1. Direct ID match
@@ -553,11 +554,26 @@ export const uploadRoutes = new Elysia({ prefix: "/upload" }).post(
           updates.stem = q.stem;
           updates.stemHash = hashStem(q.stem);
         }
-        if (embedding && !existing.stemEmbedding) updates.stemEmbedding = embedding;
+        const effectiveStem = q.stem ?? existing.stem;
+        const effectiveOptions = (questionOptions ?? existing.options) as
+          | { id: string; text: string }[]
+          | null;
+
         if (q.type === "judge") {
           if (!existing.options) updates.options = JUDGE_OPTIONS;
         } else if (questionOptions && !existing.options) {
           updates.options = questionOptions;
+        }
+
+        if (embedding && !existing.stemEmbedding) {
+          updates.stemEmbedding = embedding;
+        } else if (!existing.stemEmbedding && effectiveStem) {
+          const resolved = await resolveEmbedding(effectiveStem, effectiveOptions);
+          if (resolved) updates.stemEmbedding = resolved;
+        } else if (!existing.options && questionOptions && !q.embedding && effectiveStem) {
+          // Newly enriched with options: recompute embedding to include options
+          const recomputed = await resolveEmbedding(effectiveStem, effectiveOptions);
+          if (recomputed) updates.stemEmbedding = recomputed;
         }
         if (q.type === "text" && existing.blanks === 0 && questionBlanks > 0) {
           updates.blanks = questionBlanks;

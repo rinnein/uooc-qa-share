@@ -372,7 +372,7 @@ GET /api/courses/{cid}/tasks/{tid}
 
 当题组内按 `question_id` 未直接命中时，插件可通过全局题库语义搜索接口 `/api/questions/search` 查找跨题组或往年同源题。
 
-若插件本地运行小模型或具备向量计算能力，**强烈建议直接在 `POST /api/questions/search` 请求体中附带 1536 维向量**：
+若插件本地运行小模型或具备向量计算能力，**强烈建议直接在 `POST /api/questions/search` 请求体中附带 1536 维向量**（构建向量时，**应当将题目题干与它的选项一并计算向量**，可极大提升语义搜索的精准度与命中率）：
 
 ```http
 POST /api/questions/search
@@ -380,13 +380,17 @@ Content-Type: application/json
 
 {
   "q": "题干文本内容...",
+  "options": [
+    { "id": "A", "text": "选项A" },
+    { "id": "B", "text": "选项B" }
+  ],
   "embedding": [0.0123, 0.0456, "... (共1536维浮点数)"],
   "limit": 5
 }
 ```
 
 - **零服务端模型开销**：服务端检测到已提供符合要求的 1536 维向量后，直接调用 pgvector 执行余弦相似度计算，**完全跳过服务端 embedding 模型生成**，响应通常在 10ms~30ms 内完成。
-- **自动降级支持**：若未附带 `embedding`，服务端在配置有 Embedding API 时会自动生成向量，未配置时自动降级为 ILIKE 模糊文本检索。
+- **自动降级支持**：若未附带 `embedding`，服务端在配置有 Embedding API 时会自动生成向量（服务端会自动将 `q` 和 `options` 选项一并计算向量），未配置时自动降级为 ILIKE 模糊文本检索。
 
 ---
 
@@ -523,8 +527,8 @@ x-api-key: uooc_... (可选)
 > - **单选/多选题答案**：仅需保存对应 `options[].id` 值的选项（如 `["C"]` 或 `["A", "C"]`），严禁/不再保存实际选项文本内容（因为选项内容已经在 `options[].text` 中保存）。若客户端传入了选项文本，服务端也会自动比对转换为选项 ID。
 > - **判断题规范**：永远只有 `A. 正确`、`B. 错误` 两个选项，答案统一以唯一的 boolean 项存储（正确为 `[true]`，错误为 `[false]`）。
 > - **填空题规范**：支持上传 `values[]` 数组，其标号（0, 1...）严格对应该题目提供的填空的空数，题目的 `blanks` 对应填空总空数。
-> - `embedding` 为可选字段，必须是与服务端 `vector(1536)` 兼容的 1536 维数字数组。插件已生成词向量时，建议随题目一并上传；服务端优先使用该向量。
-> - 未提供 `embedding` 时，服务端仅在配置 `EMBEDDING_API_URL` 与 `EMBEDDING_API_KEY` 后才调用模型生成；未配置时不会发起模型请求，继续使用文本匹配回退。
+> - `embedding` 为可选字段，必须是与服务端 `vector(1536)` 兼容的 1536 维数字数组。插件已生成词向量时，建议随题目一并上传；服务端优先使用该向量。**为提高搜索命中率，客户端构建向量时应当将题干和选项一并计算向量**。
+> - 未提供 `embedding` 时，服务端仅在配置 `EMBEDDING_API_URL` 与 `EMBEDDING_API_KEY` 后才调用模型生成（自动将题干与选项一并构建向量）；未配置时不会发起模型请求，继续使用文本匹配回退。
 > - 一旦某题目成功录入 `correct_answers`，服务端会自动清理该题目之前存储的全部错误答案排除记录。
 > - 如果同一道题目已有正确答案，匿名用户上传会被忽略（`denied_anonymous_overwrite`），通过 OAuth 登录的用户则可直接更新覆盖。
 
@@ -680,13 +684,37 @@ async function uploadTaskResults(payload) {
   }
 }
 
+// 构建计算向量所需的文本（题干 + 选项一并计算，显著提高命中率）
+function buildEmbeddingText(stem, options) {
+  const parts = [];
+  if (stem && stem.trim()) parts.push(stem.trim());
+  if (Array.isArray(options) && options.length > 0) {
+    const optLines = options
+      .map((o) => {
+        if (!o || !o.text) return "";
+        const id = o.id ? o.id.trim() : "";
+        const text = o.text.trim();
+        if (id && !new RegExp(`^${id}[.、:：\\s]`, "i").test(text)) {
+          return `${id}. ${text}`;
+        }
+        return text;
+      })
+      .filter(Boolean);
+    if (optLines.length > 0) parts.push(optLines.join("\n"));
+  }
+  return parts.join("\n");
+}
+
 // generateEmbedding 由插件使用自己的词向量模型实现；返回值必须是 1536 维数组。
 async function addEmbeddings(questions, generateEmbedding) {
   return Promise.all(
-    questions.map(async (question) => ({
-      ...question,
-      embedding: question.stem ? await generateEmbedding(question.stem) : undefined,
-    })),
+    questions.map(async (question) => {
+      const text = buildEmbeddingText(question.stem, question.options);
+      return {
+        ...question,
+        embedding: text ? await generateEmbedding(text) : undefined,
+      };
+    }),
   );
 }
 

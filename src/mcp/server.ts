@@ -3,7 +3,7 @@ import { z } from "zod";
 import { db } from "@/db";
 import { taskGroups, questions, answers } from "@/db/schema";
 import { eq, sql } from "drizzle-orm";
-import { generateEmbedding } from "@/lib/embedding";
+import { buildEmbeddingText, generateEmbedding } from "@/lib/embedding";
 import { env } from "@/lib/env";
 
 export function createMcpServer() {
@@ -101,12 +101,21 @@ JSON 格式规范：
     }),
   );
 
-  // Search questions by stem text or precomputed vector
+  // Search questions by stem text, options, or precomputed vector
   server.tool(
     "search_questions",
-    "按题干内容或向量搜索题目。若传入符合要求的 1536 维向量，直接进行向量比对而无需在服务端生成向量。返回匹配的题目及其答案。",
+    "按题干内容、选项或向量搜索题目。若传入符合要求的 1536 维向量，直接进行向量比对而无需在服务端生成向量。若未传入向量，将一并计算题干与选项的向量以提升搜索命中率。返回匹配的题目及其答案。",
     {
       query: z.string().optional().describe("搜索关键词或题干文本"),
+      options: z
+        .array(
+          z.object({
+            id: z.string(),
+            text: z.string(),
+          }),
+        )
+        .optional()
+        .describe("可选的选项列表，计算向量时将与题干一并计算以提高命中率"),
       embedding: z
         .array(z.number())
         .length(1536)
@@ -115,10 +124,13 @@ JSON 格式规范：
           "可选的本地预先计算好的 1536 维词向量，传入时将直接使用该向量进行相似度检索，跳过服务端向量生成",
         ),
     },
-    async ({ query, embedding }) => {
+    async ({ query, options, embedding }) => {
       let finalEmbedding = embedding && embedding.length === 1536 ? embedding : null;
-      if (!finalEmbedding && query) {
-        finalEmbedding = await generateEmbedding(query);
+      if (!finalEmbedding && (query || (options && options.length > 0))) {
+        const textToEmbed = buildEmbeddingText(query, options);
+        if (textToEmbed) {
+          finalEmbedding = await generateEmbedding(textToEmbed);
+        }
       }
 
       let results: unknown[] = [];

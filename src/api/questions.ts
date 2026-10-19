@@ -3,17 +3,19 @@ import { db } from "@/db";
 import { questions, answers } from "@/db/schema";
 import { eq, and, sql } from "drizzle-orm";
 import { hashStem } from "@/lib/stem";
-import { EMBEDDING_DIMENSIONS, generateEmbedding } from "@/lib/embedding";
+import { buildEmbeddingText, EMBEDDING_DIMENSIONS, generateEmbedding } from "@/lib/embedding";
 import { questionCachePlugin } from "@/lib/cache";
 
 export async function searchQuestionsInternal(options: {
   q?: string;
   exact?: string | boolean;
   embedding?: number[];
+  options?: { id: string; text: string }[];
   limit?: number;
   page?: number;
 }) {
   const q = options.q?.trim();
+  const searchOptions = options.options;
   const exact = options.exact === "1" || options.exact === true;
   const page = Math.max(1, options.page ?? 1);
   const limit = options.limit && options.limit > 0 ? Math.min(options.limit, 50) : 20;
@@ -46,12 +48,15 @@ export async function searchQuestionsInternal(options: {
     };
   }
 
-  // 2. Vector search: prefer client-provided vector if valid; otherwise generate server-side if q is provided
+  // 2. Vector search: prefer client-provided vector if valid; otherwise generate server-side if q/options is provided
   let embedding: number[] | null = null;
   if (options.embedding && options.embedding.length === EMBEDDING_DIMENSIONS) {
     embedding = options.embedding;
-  } else if (q) {
-    embedding = await generateEmbedding(q);
+  } else if (q || (searchOptions && searchOptions.length > 0)) {
+    const textToEmbed = buildEmbeddingText(q, searchOptions);
+    if (textToEmbed) {
+      embedding = await generateEmbedding(textToEmbed);
+    }
   }
 
   if (embedding) {
@@ -194,7 +199,7 @@ export const questionsRoutes = new Elysia({ prefix: "/questions" })
     { params: t.Object({ id: t.String() }) },
   )
 
-  // Search questions by stem text or precomputed vector (GET)
+  // Search questions by stem text, options, or precomputed vector (GET)
   .get(
     "/search",
     async ({ query }) => {
@@ -208,12 +213,23 @@ export const questionsRoutes = new Elysia({ prefix: "/questions" })
         } catch {}
       }
 
+      let searchOptions: { id: string; text: string }[] | undefined;
+      if (query.options) {
+        try {
+          const parsed = JSON.parse(query.options);
+          if (Array.isArray(parsed)) {
+            searchOptions = parsed;
+          }
+        } catch {}
+      }
+
       const limit = query.limit ? Number.parseInt(query.limit, 10) : undefined;
       const page = query.page ? Number.parseInt(query.page, 10) : undefined;
       return searchQuestionsInternal({
         q: query.q,
         exact: query.exact,
         embedding,
+        options: searchOptions,
         limit: Number.isNaN(limit) ? undefined : limit,
         page: Number.isNaN(page) ? undefined : page,
       });
@@ -223,13 +239,14 @@ export const questionsRoutes = new Elysia({ prefix: "/questions" })
         q: t.Optional(t.String()),
         exact: t.Optional(t.String()),
         embedding: t.Optional(t.String()),
+        options: t.Optional(t.String()),
         limit: t.Optional(t.String()),
         page: t.Optional(t.String()),
       }),
     },
   )
 
-  // Search questions by stem text or precomputed vector (POST)
+  // Search questions by stem text, options, or precomputed vector (POST)
   .post(
     "/search",
     async ({ body }) => {
@@ -237,6 +254,7 @@ export const questionsRoutes = new Elysia({ prefix: "/questions" })
         q: body.q,
         exact: body.exact,
         embedding: body.embedding,
+        options: body.options,
         limit: body.limit,
         page: body.page,
       });
@@ -250,6 +268,14 @@ export const questionsRoutes = new Elysia({ prefix: "/questions" })
             minItems: EMBEDDING_DIMENSIONS,
             maxItems: EMBEDDING_DIMENSIONS,
           }),
+        ),
+        options: t.Optional(
+          t.Array(
+            t.Object({
+              id: t.String(),
+              text: t.String(),
+            }),
+          ),
         ),
         limit: t.Optional(t.Number()),
         page: t.Optional(t.Number()),

@@ -351,5 +351,15 @@ describe("POST /upload/batch validation", () => {
     const data = await res.json();
     expect(data.ok).toBe(true);
     expect(data.results).toHaveLength(3);
+
+    const { resolveEmbedding } = await import("@/lib/embedding");
+    expect(resolveEmbedding).toHaveBeenCalledWith(
+      "单选题干",
+      [
+        { id: "A", text: "苹果" },
+        { id: "B", text: "香蕉" },
+      ],
+      undefined,
+    );
   });
 });

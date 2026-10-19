@@ -148,10 +148,11 @@ export const automationRoutes = new Elysia({ prefix: "/automation" })
       }
 
       const stemHash = hashStem(stem);
-      // Attempt to resolve embedding if not already set
+      // Attempt to resolve embedding if not already set (including question options to boost search accuracy)
       let stemEmbedding = targetQuestion.stemEmbedding;
       if (!stemEmbedding) {
-        stemEmbedding = await resolveEmbedding(stem);
+        const opts = (targetQuestion.options as { id: string; text: string }[] | null) ?? null;
+        stemEmbedding = await resolveEmbedding(stem, opts);
       }
 
       await db
@@ -211,8 +212,9 @@ export const automationRoutes = new Elysia({ prefix: "/automation" })
       if (embedding && embedding.length === EMBEDDING_DIMENSIONS) {
         finalEmbedding = embedding;
       } else if (targetQuestion.stem) {
-        // Compute using server model if client didn't supply direct vector
-        finalEmbedding = await resolveEmbedding(targetQuestion.stem);
+        // Compute using server model if client didn't supply direct vector (combine stem and options)
+        const opts = (targetQuestion.options as { id: string; text: string }[] | null) ?? null;
+        finalEmbedding = await resolveEmbedding(targetQuestion.stem, opts);
       }
 
       if (!finalEmbedding) {
