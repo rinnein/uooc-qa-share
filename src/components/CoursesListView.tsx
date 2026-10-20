@@ -7,6 +7,7 @@ type TaskGroupItem = {
   name: string | null;
   questionCount: number;
   answeredCount: number;
+  excludedCount?: number;
 };
 
 type CourseItem = {
@@ -17,6 +18,7 @@ type CourseItem = {
   taskGroupCount: number;
   totalQuestions: number;
   totalAnswered: number;
+  totalExcluded?: number;
 };
 
 interface CoursesListViewProps {
@@ -200,6 +202,9 @@ export default function CoursesListView({
                     <p className="text-xs text-muted-foreground">
                       包含 {c.taskGroupCount} 个测验题单 · 共 {c.totalQuestions} 题 · 已收录正确答案{" "}
                       {c.totalAnswered} 题
+                      {typeof c.totalExcluded === "number" && c.totalExcluded > 0 && (
+                        <span> · 已排除错误 {c.totalExcluded} 题</span>
+                      )}
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
@@ -234,15 +239,20 @@ export default function CoursesListView({
                               </span>
                             </div>
                           </div>
-                          <div className="mt-2.5 flex items-center justify-between text-xs text-muted-foreground">
+                          <div className="mt-2.5 flex items-center justify-between text-xs text-muted-foreground flex-wrap gap-1">
                             <span>共 {g.questionCount} 题</span>
-                            <span
-                              className={
-                                g.answeredCount > 0 ? "text-green-600 dark:text-green-400" : ""
-                              }
-                            >
-                              已录答案 {g.answeredCount} 题
-                            </span>
+                            <div className="flex items-center gap-2">
+                              {g.answeredCount > 0 && (
+                                <span className="text-green-600 dark:text-green-400">
+                                  已录答案 {g.answeredCount} 题
+                                </span>
+                              )}
+                              {typeof g.excludedCount === "number" && g.excludedCount > 0 && (
+                                <span className="text-amber-600 dark:text-amber-400">
+                                  排除错误 {g.excludedCount} 题
+                                </span>
+                              )}
+                            </div>
                           </div>
                         </a>
                       ))}

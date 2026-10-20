@@ -6,6 +6,40 @@ import { hashStem } from "@/lib/stem";
 import { buildEmbeddingText, EMBEDDING_DIMENSIONS, generateEmbedding } from "@/lib/embedding";
 import { questionCachePlugin } from "@/lib/cache";
 
+export async function attachAnswersToQuestions<T extends { id?: number }>(
+  items: T[],
+): Promise<(T & { answers: any[] })[]> {
+  const qIds = items.map((q) => q.id).filter((id): id is number => typeof id === "number");
+  if (qIds.length === 0 || !db?.query?.answers?.findMany) {
+    return items.map((q) => ({ ...q, answers: (q as any).answers ?? [] }));
+  }
+
+  try {
+    const allAnswers =
+      (await db.query.answers.findMany({
+        where: sql`${answers.questionId} IN (${sql.join(
+          qIds.map((id) => sql`${id}`),
+          sql`, `,
+        )})`,
+        orderBy: (a, { desc }) => [desc(a.isCorrect), desc(a.updatedAt)],
+      })) ?? [];
+
+    const answersByQuestion = new Map<number, any[]>();
+    for (const a of allAnswers) {
+      const list = answersByQuestion.get(a.questionId) ?? [];
+      list.push(a);
+      answersByQuestion.set(a.questionId, list);
+    }
+
+    return items.map((q) => ({
+      ...q,
+      answers: typeof q.id === "number" ? (answersByQuestion.get(q.id) ?? []) : [],
+    }));
+  } catch {
+    return items.map((q) => ({ ...q, answers: (q as any).answers ?? [] }));
+  }
+}
+
 export async function searchQuestionsInternal(options: {
   q?: string;
   exact?: string | boolean;
@@ -39,8 +73,9 @@ export async function searchQuestionsInternal(options: {
         if (c) total = Number(c.count);
       } catch {}
     }
+    const enrichedResults = await attachAnswersToQuestions(results);
     return {
-      results,
+      results: enrichedResults,
       total,
       page,
       pageSize: limit,
@@ -74,8 +109,9 @@ export async function searchQuestionsInternal(options: {
     const total =
       rows.length > 0 && rows[0].total_count != null ? Number(rows[0].total_count) : rows.length;
     const results = rows.map(({ total_count: _total_count, ...rest }) => rest);
+    const enrichedResults = await attachAnswersToQuestions(results);
     return {
-      results,
+      results: enrichedResults,
       total,
       page,
       pageSize: limit,
@@ -100,8 +136,9 @@ export async function searchQuestionsInternal(options: {
         if (c) total = Number(c.count);
       } catch {}
     }
+    const enrichedResults = await attachAnswersToQuestions(results);
     return {
-      results,
+      results: enrichedResults,
       total,
       page,
       pageSize: limit,

@@ -124,8 +124,16 @@ export default function UploadForm() {
       });
       const data = await res.json();
       if (data.ok) {
-        const count = data.results?.length ?? 0;
-        setStatus({ type: "success", message: `上传成功！处理了 ${count} 道题目` });
+        const results = (data.results ?? []) as Array<{ action: string }>;
+        const count = results.length;
+        const addedCorrect = results.filter((r) => r.action === "added_correct").length;
+        const updatedCorrect = results.filter((r) => r.action === "updated_correct").length;
+        const addedWrong = results.filter((r) => r.action === "added_wrong").length;
+        const details: string[] = [`共处理 ${count} 道题目`];
+        if (addedCorrect > 0) details.push(`新增正确答案 ${addedCorrect} 题`);
+        if (updatedCorrect > 0) details.push(`更新答案 ${updatedCorrect} 题`);
+        if (addedWrong > 0) details.push(`新增已排除错误答案 ${addedWrong} 项`);
+        setStatus({ type: "success", message: `上传成功！${details.join("，")}` });
       } else {
         setStatus({ type: "error", message: data.error ?? "上传失败" });
       }

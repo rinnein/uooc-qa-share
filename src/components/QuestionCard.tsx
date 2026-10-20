@@ -63,6 +63,8 @@ export default function QuestionCard({ question }: { question: Question }) {
   const q = question;
   const correctAnswers = q.answers?.filter((a) => a.isCorrect) ?? [];
   const wrongAnswers = q.answers?.filter((a) => !a.isCorrect) ?? [];
+  const hasCorrect = correctAnswers.length > 0;
+  const hasWrong = wrongAnswers.length > 0;
 
   return (
     <a
@@ -75,6 +77,19 @@ export default function QuestionCard({ question }: { question: Question }) {
         >
           {typeLabels[q.type] ?? q.type}
         </span>
+        {hasCorrect ? (
+          <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
+            ✓ 已确认正确答案
+          </span>
+        ) : hasWrong ? (
+          <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-rose-100 text-rose-800 dark:bg-rose-950/80 dark:text-rose-300 border border-rose-300 dark:border-rose-800">
+            ✗ 已排除 {wrongAnswers.length} 项错误答案
+          </span>
+        ) : (
+          <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-muted text-muted-foreground border">
+            未录入答案
+          </span>
+        )}
         <span className="text-xs text-muted-foreground">tid: {q.tid}</span>
         {q.questionId && <span className="text-xs text-muted-foreground">#{q.questionId}</span>}
         {q.similarity != null && (
@@ -92,38 +107,59 @@ export default function QuestionCard({ question }: { question: Question }) {
 
       {q.options && q.options.length > 0 && (
         <div className="flex flex-wrap gap-2 text-xs">
-          {q.options.map((opt) => (
-            <span
-              key={opt.id}
-              className={`rounded border px-1.5 py-0.5 ${
-                correctAnswers.some((a) => isOptionSelected(a.values, opt.id, q.type))
-                  ? "border-green-500 bg-green-50 text-green-700 dark:bg-green-950 dark:text-green-300"
-                  : wrongAnswers.some((a) => isOptionSelected(a.values, opt.id, q.type))
-                    ? "border-red-500 bg-red-50 text-red-700 line-through dark:bg-red-950 dark:text-red-300"
-                    : "border-border"
-              }`}
-            >
-              {opt.id}. {opt.text}
-            </span>
-          ))}
+          {q.options.map((opt) => {
+            const isCorrectOpt = correctAnswers.some((a) =>
+              isOptionSelected(a.values, opt.id, q.type),
+            );
+            const isWrongOpt = wrongAnswers.some((a) => isOptionSelected(a.values, opt.id, q.type));
+            return (
+              <span
+                key={opt.id}
+                className={`rounded border px-2 py-1 inline-flex items-center gap-1.5 transition-colors ${
+                  isCorrectOpt
+                    ? "border-green-500 bg-green-50 text-green-700 font-medium dark:bg-green-950 dark:text-green-300"
+                    : isWrongOpt
+                      ? "border-red-400 bg-red-50/80 text-red-700 line-through dark:bg-red-950/60 dark:text-red-300"
+                      : "border-border"
+                }`}
+              >
+                <span>
+                  {opt.id}. {opt.text}
+                </span>
+                {isWrongOpt && (
+                  <span className="text-[10px] no-underline font-normal text-red-600 dark:text-red-400 bg-red-100 dark:bg-red-900/60 px-1 rounded">
+                    已排除
+                  </span>
+                )}
+                {isCorrectOpt && (
+                  <span className="text-[10px] no-underline font-normal text-green-600 dark:text-green-400 bg-green-100 dark:bg-green-900/60 px-1 rounded">
+                    正确
+                  </span>
+                )}
+              </span>
+            );
+          })}
         </div>
       )}
 
-      <div className="flex items-center gap-2 text-xs">
-        {correctAnswers.length > 0 && (
-          <span className="text-green-600 dark:text-green-400">
-            ✓ 正确答案:{" "}
-            {correctAnswers.map((a) => formatAnswerValues(a.values, q.type)).join(" | ")}
+      <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-3 text-xs pt-1 border-t border-border/50">
+        {hasCorrect && (
+          <span className="text-green-600 dark:text-green-400 font-medium flex items-center gap-1">
+            <span>✓ 正确答案:</span>
+            <span>
+              {correctAnswers.map((a) => formatAnswerValues(a.values, q.type)).join(" | ")}
+            </span>
           </span>
         )}
-        {wrongAnswers.length > 0 && (
-          <span className="text-red-500 dark:text-red-400">
-            ✗ 排除: {wrongAnswers.map((a) => formatAnswerValues(a.values, q.type)).join(", ")}
+        {hasWrong && (
+          <span className="text-red-600 dark:text-red-400 flex items-center gap-1">
+            <span>✗ 已排除答案 (用户提交确认错误):</span>
+            <span className="font-semibold underline decoration-red-400 decoration-wavy">
+              {wrongAnswers.map((a) => formatAnswerValues(a.values, q.type)).join(", ")}
+            </span>
           </span>
         )}
-        {correctAnswers.length === 0 && wrongAnswers.length === 0 && (
-          <span className="text-muted-foreground">暂无答案</span>
-        )}
+        {!hasCorrect && !hasWrong && <span className="text-muted-foreground">暂无答案</span>}
       </div>
     </a>
   );

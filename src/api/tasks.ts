@@ -110,11 +110,24 @@ export const tasksRoutes = new Elysia()
         .where(eq(answers.isCorrect, true))
         .groupBy(questions.tid);
 
+      const excludedCounts = await db
+        .select({
+          tid: questions.tid,
+          count: sql<number>`count(distinct ${questions.id})`,
+        })
+        .from(questions)
+        .innerJoin(answers, eq(questions.id, answers.questionId))
+        .where(eq(answers.isCorrect, false))
+        .groupBy(questions.tid);
+
       const qMap = new Map<string, number>();
       for (const row of questionCounts) qMap.set(row.tid, Number(row.count));
 
       const aMap = new Map<string, number>();
       for (const row of answeredCounts) aMap.set(row.tid, Number(row.count));
+
+      const eMap = new Map<string, number>();
+      for (const row of excludedCounts) eMap.set(row.tid, Number(row.count));
 
       const groupsByCid = new Map<
         string,
@@ -124,6 +137,7 @@ export const tasksRoutes = new Elysia()
           name: string | null;
           questionCount: number;
           answeredCount: number;
+          excludedCount: number;
         }>
       >();
 
@@ -135,6 +149,7 @@ export const tasksRoutes = new Elysia()
           name: g.name,
           questionCount: qMap.get(g.tid) ?? 0,
           answeredCount: aMap.get(g.tid) ?? 0,
+          excludedCount: eMap.get(g.tid) ?? 0,
         });
         groupsByCid.set(g.cid, list);
       }
@@ -149,6 +164,7 @@ export const tasksRoutes = new Elysia()
           taskGroupCount: tGroups.length,
           totalQuestions: tGroups.reduce((acc, g) => acc + g.questionCount, 0),
           totalAnswered: tGroups.reduce((acc, g) => acc + g.answeredCount, 0),
+          totalExcluded: tGroups.reduce((acc, g) => acc + g.excludedCount, 0),
         };
       });
 
@@ -207,6 +223,7 @@ export const tasksRoutes = new Elysia()
       const tids = groups.map((g) => g.tid);
       let questionCounts: { tid: string; count: number }[] = [];
       let answeredCounts: { tid: string; count: number }[] = [];
+      let excludedCounts: { tid: string; count: number }[] = [];
 
       if (tids.length > 0) {
         questionCounts = await db
@@ -240,6 +257,24 @@ export const tasksRoutes = new Elysia()
             ),
           )
           .groupBy(questions.tid);
+
+        excludedCounts = await db
+          .select({
+            tid: questions.tid,
+            count: sql<number>`count(distinct ${questions.id})`,
+          })
+          .from(questions)
+          .innerJoin(answers, eq(questions.id, answers.questionId))
+          .where(
+            and(
+              sql`${questions.tid} IN (${sql.join(
+                tids.map((id) => sql`${id}`),
+                sql`, `,
+              )})`,
+              eq(answers.isCorrect, false),
+            ),
+          )
+          .groupBy(questions.tid);
       }
 
       const qMap = new Map<string, number>();
@@ -248,12 +283,16 @@ export const tasksRoutes = new Elysia()
       const aMap = new Map<string, number>();
       for (const row of answeredCounts) aMap.set(row.tid, Number(row.count));
 
+      const eMap = new Map<string, number>();
+      for (const row of excludedCounts) eMap.set(row.tid, Number(row.count));
+
       return {
         course,
         taskGroups: groups.map((g) => ({
           ...g,
           questionCount: qMap.get(g.tid) ?? 0,
           answeredCount: aMap.get(g.tid) ?? 0,
+          excludedCount: eMap.get(g.tid) ?? 0,
         })),
       };
     },

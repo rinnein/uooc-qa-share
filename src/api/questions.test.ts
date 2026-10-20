@@ -42,7 +42,7 @@ describe("searchQuestionsInternal", () => {
       embedding: clientVector,
     });
 
-    expect(result.results).toEqual([{ id: 1, stem: "测试题干" }]);
+    expect(result.results).toEqual([{ id: 1, stem: "测试题干", answers: [] }]);
     // Must NOT call server embedding generator
     expect(mockGenerateEmbedding).not.toHaveBeenCalled();
     expect(mockDb.execute).toHaveBeenCalledOnce();
@@ -58,7 +58,7 @@ describe("searchQuestionsInternal", () => {
       q: "需服务端计算的文本",
     });
 
-    expect(result.results).toEqual([{ id: 2, stem: "服务端计算题干" }]);
+    expect(result.results).toEqual([{ id: 2, stem: "服务端计算题干", answers: [] }]);
     expect(mockGenerateEmbedding).toHaveBeenCalledWith("需服务端计算的文本");
     expect(mockDb.execute).toHaveBeenCalledOnce();
   });
@@ -77,7 +77,7 @@ describe("searchQuestionsInternal", () => {
       ],
     });
 
-    expect(result.results).toEqual([{ id: 4, stem: "题目带选项" }]);
+    expect(result.results).toEqual([{ id: 4, stem: "题目带选项", answers: [] }]);
     expect(mockGenerateEmbedding).toHaveBeenCalledWith("题目题干\nA. 选项内容A\nB. 选项内容B");
     expect(mockDb.execute).toHaveBeenCalledOnce();
   });
@@ -91,8 +91,33 @@ describe("searchQuestionsInternal", () => {
       q: "文本模糊",
     });
 
-    expect(result.results).toEqual([{ id: 3, stem: "文本模糊搜索" }]);
+    expect(result.results).toEqual([{ id: 3, stem: "文本模糊搜索", answers: [] }]);
     expect(mockGenerateEmbedding).toHaveBeenCalledWith("文本模糊");
     expect(mockDb.query.questions.findMany).toHaveBeenCalledOnce();
+  });
+
+  it("attaches answers (including correct and excluded answers) to search results", async () => {
+    mockGenerateEmbedding.mockClear();
+    mockGenerateEmbedding.mockResolvedValueOnce(null);
+    mockDb.query.questions.findMany.mockResolvedValueOnce([{ id: 10, stem: "含答案测试题" }]);
+    mockDb.query.answers.findMany.mockResolvedValueOnce([
+      { id: 101, questionId: 10, values: ["A"], isCorrect: true },
+      { id: 102, questionId: 10, values: ["C"], isCorrect: false },
+    ]);
+
+    const result = await searchQuestionsInternal({
+      q: "含答案测试题",
+    });
+
+    expect(result.results).toEqual([
+      {
+        id: 10,
+        stem: "含答案测试题",
+        answers: [
+          { id: 101, questionId: 10, values: ["A"], isCorrect: true },
+          { id: 102, questionId: 10, values: ["C"], isCorrect: false },
+        ],
+      },
+    ]);
   });
 });

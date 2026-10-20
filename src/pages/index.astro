@@ -10,6 +10,7 @@ let stats = {
   courses: 0,
   taskGroups: 0,
   correctAnswers: 0,
+  excludedAnswers: 0,
 };
 
 try {
@@ -20,12 +21,17 @@ try {
     .select({ count: sql<number>`count(*)` })
     .from(answers)
     .where(eq(answers.isCorrect, true));
+  const [wCount] = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(answers)
+    .where(eq(answers.isCorrect, false));
 
   stats = {
     questions: Number(qCount?.count ?? 0),
     courses: Number(cCount?.count ?? 0),
     taskGroups: Number(tCount?.count ?? 0),
     correctAnswers: Number(aCount?.count ?? 0),
+    excludedAnswers: Number(wCount?.count ?? 0),
   };
 } catch (e) {
   console.error("Failed to load statistics on index:", e);
@@ -46,7 +52,7 @@ try {
     </div>
 
     <!-- 题库统计数据概览 -->
-    <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 w-full max-w-3xl">
+    <div class="grid grid-cols-2 sm:grid-cols-5 gap-3 w-full max-w-4xl">
       <div class="rounded-xl border bg-card/60 p-4 text-center space-y-1 shadow-sm">
         <div class="text-xs font-medium text-muted-foreground uppercase tracking-wider">题目总数</div>
         <div class="text-3xl font-bold tracking-tight text-foreground">{stats.questions.toLocaleString()}</div>
@@ -58,11 +64,16 @@ try {
         <div class="text-[11px] text-muted-foreground">已确认标准答案</div>
       </div>
       <div class="rounded-xl border bg-card/60 p-4 text-center space-y-1 shadow-sm">
+        <div class="text-xs font-medium text-muted-foreground uppercase tracking-wider">已排除答案</div>
+        <div class="text-3xl font-bold tracking-tight text-foreground">{stats.excludedAnswers.toLocaleString()}</div>
+        <div class="text-[11px] text-muted-foreground">用户提交确认错误</div>
+      </div>
+      <div class="rounded-xl border bg-card/60 p-4 text-center space-y-1 shadow-sm">
         <div class="text-xs font-medium text-muted-foreground uppercase tracking-wider">测验题单</div>
         <div class="text-3xl font-bold tracking-tight text-foreground">{stats.taskGroups.toLocaleString()}</div>
         <div class="text-[11px] text-muted-foreground">单元测验 / 作业</div>
       </div>
-      <div class="rounded-xl border bg-card/60 p-4 text-center space-y-1 shadow-sm">
+      <div class="rounded-xl border bg-card/60 p-4 text-center space-y-1 shadow-sm col-span-2 sm:col-span-1">
         <div class="text-xs font-medium text-muted-foreground uppercase tracking-wider">覆盖课程</div>
         <div class="text-3xl font-bold tracking-tight text-foreground">{stats.courses.toLocaleString()}</div>
         <div class="text-[11px] text-muted-foreground">联盟收录课程</div>

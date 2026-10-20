@@ -6,6 +6,7 @@ type TaskGroup = {
   name: string | null;
   questionCount?: number;
   answeredCount?: number;
+  excludedCount?: number;
 };
 type Course = { cid: string; name: string | null };
 
@@ -63,11 +64,16 @@ export default function CourseView({ cid }: { cid: string }) {
               {g.name && <span className="ml-2 text-muted-foreground">{g.name}</span>}
             </div>
             {typeof g.questionCount === "number" && (
-              <div className="text-xs text-muted-foreground flex items-center gap-3">
+              <div className="text-xs text-muted-foreground flex items-center gap-3 flex-wrap">
                 <span>共 {g.questionCount} 题</span>
                 {typeof g.answeredCount === "number" && g.answeredCount > 0 && (
                   <span className="text-green-600 dark:text-green-400">
                     已录答案 {g.answeredCount} 题
+                  </span>
+                )}
+                {typeof g.excludedCount === "number" && g.excludedCount > 0 && (
+                  <span className="text-amber-600 dark:text-amber-400">
+                    已排除错误 {g.excludedCount} 题
                   </span>
                 )}
               </div>
