@@ -23,6 +23,26 @@ jobs:
   test:
     name: Check & Test
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg18
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: uooc_qa_share
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/uooc_qa_share
+      BETTER_AUTH_SECRET: test-better-auth-secret-key-in-ci
+      BETTER_AUTH_URL: http://localhost:4321
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -35,6 +55,11 @@ jobs:
 
       - name: Run checks
         run: vp check
+
+      - name: Setup test database
+        run: |
+          node --input-type=module -e "import postgres from 'postgres'; const sql = postgres(process.env.DATABASE_URL); await sql\`CREATE EXTENSION IF NOT EXISTS vector;\`; await sql.end();"
+          vp run db:push --force
 
       - name: Run tests
         run: vp test

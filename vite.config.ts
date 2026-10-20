@@ -4,6 +4,9 @@ export default defineConfig({
   resolve: {
     tsconfigPaths: true,
   },
+  test: {
+    fileParallelism: false,
+  },
   staged: {
     "*": "vp check --fix",
   },
