@@ -10,7 +10,7 @@ RUN vp install --frozen-lockfile
 
 # Build. vp reads .node-version and provisions that exact Node.js automatically.
 COPY --chown=vp:vp . .
-RUN vp build
+RUN vp run build
 
 # Export the exact resolved Node.js binary for the runtime stage.
 RUN cp "$(vp env which node | head -1)" /tmp/node
