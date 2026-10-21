@@ -41,8 +41,21 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
       POSTGRES_DB: ${POSTGRES_DB:-uooc_qa_share}
+      BACKUP_DIR: /backups
+      BACKUP_TABLES: ${BACKUP_TABLES:-courses task_groups questions answers}
+      DAILY_TIME: ${BACKUP_DAILY_TIME:-02:00}
+      BACKUP_ON_START: ${BACKUP_ON_START:-true}
+      BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-7}
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./backups:/backups
+      - ./scripts/backup.sh:/usr/local/bin/backup.sh:ro
+    entrypoint:
+      - /bin/bash
+      - -c
+      - |
+        /usr/local/bin/backup.sh &
+        exec docker-entrypoint.sh postgres
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     healthcheck:
