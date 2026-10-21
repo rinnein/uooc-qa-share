@@ -23,12 +23,12 @@ describe("getAllowedTaskTypesForLevel", () => {
     expect(tasks).toEqual([]);
   });
 
-  it("should return stem, embedding, and options requests for level 'anonymous'", () => {
+  it("should return all request types including answer_request for level 'anonymous' as new writes", () => {
     const tasks = getAllowedTaskTypesForLevel("anonymous");
     expect(tasks).toContain("stem_request");
     expect(tasks).toContain("embedding_request");
     expect(tasks).toContain("options_request");
-    expect(tasks).not.toContain("answer_request");
+    expect(tasks).toContain("answer_request");
   });
 
   it("should return all task types for level 'authenticated' and 'admin'", () => {

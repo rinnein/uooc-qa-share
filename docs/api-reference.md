@@ -286,12 +286,12 @@
 
 ### 权限与任务类型映射
 
-| 任务类型 (`task_type`) | 触发条件                                      | 目标                                                              | 允许执行的写权限级别                            |
-| ---------------------- | --------------------------------------------- | ----------------------------------------------------------------- | ----------------------------------------------- |
-| `stem_request`         | `stem IS NULL OR stem = ''`                   | 补充题目完整题干文本，自动重算 `stem_hash` 并生成向量             | **匿名 API Key / 认证用户 / 管理员**            |
-| `embedding_request`    | `stem IS NOT NULL AND stem_embedding IS NULL` | 为已有题干题目计算并补充 512 维词向量（基于 `bge-small-zh-v1.5`） | **匿名 API Key / 认证用户 / 管理员**            |
-| `options_request`      | 选择题/判断题且 `options IS NULL`             | 补充题目选项列表                                                  | **匿名 API Key / 认证用户 / 管理员**            |
-| `answer_request`       | 尚无关联 `isCorrect = true` 的答案            | 补充确定的正确答案                                                | **认证用户 / 管理员**（匿名用户被拒绝以防污染） |
+| 任务类型 (`task_type`) | 触发条件                                      | 目标                                                              | 允许执行的写权限级别                                                                     |
+| ---------------------- | --------------------------------------------- | ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `stem_request`         | `stem IS NULL OR stem = ''`                   | 补充题目完整题干文本，自动重算 `stem_hash` 并生成向量             | **匿名 API Key / 认证用户 / 管理员**                                                     |
+| `embedding_request`    | `stem IS NOT NULL AND stem_embedding IS NULL` | 为已有题干题目计算并补充 512 维词向量（基于 `bge-small-zh-v1.5`） | **匿名 API Key / 认证用户 / 管理员**                                                     |
+| `options_request`      | 选择题/判断题且 `options IS NULL`             | 补充题目选项列表                                                  | **匿名 API Key / 认证用户 / 管理员**                                                     |
+| `answer_request`       | 尚无关联 `isCorrect = true` 的答案            | 补充确定的正确答案或已排除错误项                                  | **匿名 API Key / 认证用户 / 管理员**（作为新增写入允许；覆盖修改已存正确答案需认证用户） |
 
 ### GET /api/automation/tasks
 
@@ -318,7 +318,7 @@
     "permissionLevel": "anonymous",
     "isAnonymous": true
   },
-  "allowedTaskTypes": ["stem_request", "embedding_request", "options_request"],
+  "allowedTaskTypes": ["stem_request", "embedding_request", "options_request", "answer_request"],
   "count": 2,
   "tasks": [
     {

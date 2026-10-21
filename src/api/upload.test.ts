@@ -1,5 +1,10 @@
 import { describe, it, expect, vi } from "vite-plus/test";
-import { normalizeJudgeValue, normalizeChoiceAnswers, uploadRoutes } from "./upload";
+import {
+  normalizeJudgeValue,
+  normalizeChoiceAnswers,
+  areAnswerValuesEqual,
+  uploadRoutes,
+} from "./upload";
 
 const { mockDb } = vi.hoisted(() => ({
   mockDb: {
@@ -96,6 +101,16 @@ describe("normalizeChoiceAnswers", () => {
   it("maps prefixed strings like 'A. 苹果' to option id", () => {
     expect(normalizeChoiceAnswers(["A. 苹果"], options)).toEqual(["A"]);
     expect(normalizeChoiceAnswers(["B、香蕉"], options)).toEqual(["B"]);
+  });
+});
+
+describe("areAnswerValuesEqual", () => {
+  it("compares answer value arrays regardless of ordering", () => {
+    expect(areAnswerValuesEqual(["A", "C"], ["C", "A"])).toBe(true);
+    expect(areAnswerValuesEqual(["A"], ["A"])).toBe(true);
+    expect(areAnswerValuesEqual([true], ["true"])).toBe(true);
+    expect(areAnswerValuesEqual(["A"], ["B"])).toBe(false);
+    expect(areAnswerValuesEqual(["A", "B"], ["A"])).toBe(false);
   });
 });
 
@@ -361,5 +376,146 @@ describe("POST /upload/batch validation", () => {
       ],
       undefined,
     );
+  });
+
+  it("permits anonymous users to add correct answers and wrong answers to questions without correct answers (new write)", async () => {
+    // When existing question has no correct answer
+    mockDb.query.questions.findFirst.mockResolvedValueOnce({
+      id: 317,
+      tid: "246803016",
+      questionId: "149379890",
+      type: "single",
+      stem: "测试题干317",
+      options: [
+        { id: "A", text: "选项A" },
+        { id: "B", text: "选项B" },
+      ],
+    });
+    // No correct answer exists in DB
+    mockDb.query.answers.findFirst.mockResolvedValueOnce(null);
+
+    const res = await uploadRoutes.handle(
+      new Request("http://localhost/upload/batch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tid: "246803016",
+          questions: [
+            {
+              question_id: "149379890",
+              type: "single",
+              options: [
+                { id: "A", text: "选项A" },
+                { id: "B", text: "选项B" },
+              ],
+              correct_answers: ["B"],
+            },
+          ],
+        }),
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.ok).toBe(true);
+    expect(data.results[0]).toEqual({
+      question_id: "149379890",
+      action: "added_correct",
+      internal_id: 317,
+    });
+  });
+
+  it("recognizes re-submitting the same correct answer as verified_correct, not denied_anonymous_overwrite", async () => {
+    // Existing question
+    mockDb.query.questions.findFirst.mockResolvedValueOnce({
+      id: 317,
+      tid: "246803016",
+      questionId: "149379890",
+      type: "single",
+      options: [
+        { id: "A", text: "选项A" },
+        { id: "B", text: "选项B" },
+      ],
+    });
+    // Existing correct answer is "B"
+    mockDb.query.answers.findFirst.mockResolvedValueOnce({
+      id: 99,
+      questionId: 317,
+      values: ["B"],
+      isCorrect: true,
+    });
+
+    const res = await uploadRoutes.handle(
+      new Request("http://localhost/upload/batch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tid: "246803016",
+          questions: [
+            {
+              question_id: "149379890",
+              type: "single",
+              options: [
+                { id: "A", text: "选项A" },
+                { id: "B", text: "选项B" },
+              ],
+              correct_answers: ["B"],
+            },
+          ],
+        }),
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.ok).toBe(true);
+    expect(data.results[0].action).toBe("verified_correct");
+  });
+
+  it("denies anonymous user from overwriting an existing different correct answer", async () => {
+    // Existing question
+    mockDb.query.questions.findFirst.mockResolvedValueOnce({
+      id: 317,
+      tid: "246803016",
+      questionId: "149379890",
+      type: "single",
+      options: [
+        { id: "A", text: "选项A" },
+        { id: "B", text: "选项B" },
+      ],
+    });
+    // Existing correct answer is "A"
+    mockDb.query.answers.findFirst.mockResolvedValueOnce({
+      id: 99,
+      questionId: 317,
+      values: ["A"],
+      isCorrect: true,
+    });
+
+    const res = await uploadRoutes.handle(
+      new Request("http://localhost/upload/batch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tid: "246803016",
+          questions: [
+            {
+              question_id: "149379890",
+              type: "single",
+              options: [
+                { id: "A", text: "选项A" },
+                { id: "B", text: "选项B" },
+              ],
+              correct_answers: ["B"],
+            },
+          ],
+        }),
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.ok).toBe(true);
+    expect(data.results[0].action).toBe("denied_anonymous_overwrite");
   });
 });

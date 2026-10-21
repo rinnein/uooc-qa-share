@@ -93,17 +93,17 @@ export async function resolveUserAuth(request: Request): Promise<UserAuthContext
 
 /**
  * Return allowed task types based on account's write permission level.
- * - anonymous / plugin: can fulfill stem_request, embedding_request, options_request
- * - authenticated: can fulfill all task types (including answer_request/overwrites)
+ * - anonymous / plugin: can fulfill all missing data requests (stem_request, embedding_request, options_request, answer_request)
+ *   as non-conflicting new writes (无答案->有答案, 排除项->确定正确选项, 补充缺失题干/选项).
+ * - authenticated / admin: can fulfill all task types and overwrite/update existing answers.
  * - none: cannot update any tasks (empty list)
  */
 export function getAllowedTaskTypesForLevel(level: WritePermissionLevel): TaskType[] {
   switch (level) {
     case "admin":
     case "authenticated":
-      return ["stem_request", "embedding_request", "options_request", "answer_request"];
     case "anonymous":
-      return ["stem_request", "embedding_request", "options_request"];
+      return ["stem_request", "embedding_request", "options_request", "answer_request"];
     case "none":
     default:
       return [];

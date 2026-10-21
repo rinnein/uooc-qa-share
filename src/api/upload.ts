@@ -114,6 +114,14 @@ export function normalizeChoiceAnswers(
   return result;
 }
 
+export function areAnswerValuesEqual(a: unknown[], b: unknown[]): boolean {
+  if (!Array.isArray(a) || !Array.isArray(b)) return false;
+  if (a.length !== b.length) return false;
+  const sortedA = [...a].map(String).sort();
+  const sortedB = [...b].map(String).sort();
+  return sortedA.every((val, idx) => val === sortedB[idx]);
+}
+
 export function validateQuestionUpload(
   q: {
     question_id: string;
@@ -544,6 +552,7 @@ export const uploadRoutes = new Elysia({ prefix: "/upload" }).post(
       }
 
       let questionInternalId: number;
+      let enrichedMetadata = false;
 
       if (existing) {
         questionInternalId = existing.id;
@@ -553,6 +562,7 @@ export const uploadRoutes = new Elysia({ prefix: "/upload" }).post(
         if (q.stem && !existing.stem) {
           updates.stem = q.stem;
           updates.stemHash = hashStem(q.stem);
+          enrichedMetadata = true;
         }
         const effectiveStem = q.stem ?? existing.stem;
         const effectiveOptions = (questionOptions ?? existing.options) as
@@ -560,26 +570,40 @@ export const uploadRoutes = new Elysia({ prefix: "/upload" }).post(
           | null;
 
         if (q.type === "judge") {
-          if (!existing.options) updates.options = JUDGE_OPTIONS;
+          if (!existing.options) {
+            updates.options = JUDGE_OPTIONS;
+            enrichedMetadata = true;
+          }
         } else if (questionOptions && !existing.options) {
           updates.options = questionOptions;
+          enrichedMetadata = true;
         }
 
         if (embedding && !existing.stemEmbedding) {
           updates.stemEmbedding = embedding;
+          enrichedMetadata = true;
         } else if (!existing.stemEmbedding && effectiveStem) {
           const resolved = await resolveEmbedding(effectiveStem, effectiveOptions);
-          if (resolved) updates.stemEmbedding = resolved;
+          if (resolved) {
+            updates.stemEmbedding = resolved;
+            enrichedMetadata = true;
+          }
         } else if (!existing.options && questionOptions && !q.embedding && effectiveStem) {
           // Newly enriched with options: recompute embedding to include options
           const recomputed = await resolveEmbedding(effectiveStem, effectiveOptions);
-          if (recomputed) updates.stemEmbedding = recomputed;
+          if (recomputed) {
+            updates.stemEmbedding = recomputed;
+            enrichedMetadata = true;
+          }
         }
         if (q.type === "text" && existing.blanks === 0 && questionBlanks > 0) {
           updates.blanks = questionBlanks;
+          enrichedMetadata = true;
         }
 
-        await db.update(questions).set(updates).where(eq(questions.id, existing.id));
+        if (enrichedMetadata) {
+          await db.update(questions).set(updates).where(eq(questions.id, existing.id));
+        }
       } else {
         // Create new question
         const stemHash = q.stem ? hashStem(q.stem) : null;
@@ -651,28 +675,39 @@ export const uploadRoutes = new Elysia({ prefix: "/upload" }).post(
         });
 
         if (existingCorrect) {
-          // Overwrite existing correct answer
-          if (isAnonymous) {
-            results.push({
-              question_id: q.question_id,
-              action: "denied_anonymous_overwrite",
-              internal_id: questionInternalId,
-            });
-            continue;
+          const isSameAnswer = areAnswerValuesEqual(
+            existingCorrect.values as unknown[],
+            toSaveCorrect,
+          );
+
+          if (isSameAnswer) {
+            // Same answer: not an overwrite attempt, confirmed existing standard answer
+            action = action === "no_change" ? "verified_correct" : action;
+          } else if (isAnonymous) {
+            // Anonymous cannot overwrite a confirmed different correct answer
+            action = "denied_anonymous_overwrite";
+          } else {
+            // Authenticated overwrite
+            await db
+              .update(answers)
+              .set({
+                values: toSaveCorrect,
+                source,
+                submittedBy: userId,
+                confidence: 1.0,
+                updatedAt: new Date(),
+              })
+              .where(eq(answers.id, existingCorrect.id));
+            action = "updated_correct";
+
+            // Delete old wrong-answer exclusions since we updated the correct answer
+            await db
+              .delete(answers)
+              .where(and(eq(answers.questionId, questionInternalId), eq(answers.isCorrect, false)));
           }
-          await db
-            .update(answers)
-            .set({
-              values: toSaveCorrect,
-              source,
-              submittedBy: userId,
-              confidence: 1.0,
-              updatedAt: new Date(),
-            })
-            .where(eq(answers.id, existingCorrect.id));
-          action = "updated_correct";
         } else {
-          // Insert new correct answer
+          // No correct answer exists yet (could have no answers, or only wrong answer exclusions)
+          // Any new correct answer is a NEW write (象限变化: 无答案->有答案 / 排除项->确定正确选项)
           await db.insert(answers).values({
             questionId: questionInternalId,
             values: toSaveCorrect,
@@ -682,24 +717,30 @@ export const uploadRoutes = new Elysia({ prefix: "/upload" }).post(
             confidence: 1.0,
           });
           action = "added_correct";
-        }
 
-        // Delete old wrong-answer exclusions since we now have a correct answer
-        await db
-          .delete(answers)
-          .where(and(eq(answers.questionId, questionInternalId), eq(answers.isCorrect, false)));
+          // Delete old wrong-answer exclusions since we now have a confirmed correct answer
+          await db
+            .delete(answers)
+            .where(and(eq(answers.questionId, questionInternalId), eq(answers.isCorrect, false)));
+        }
       }
 
       if (toSaveWrongs.length > 0) {
-        // Only add wrong answers if there's no correct answer yet
-        const hasCorrect = await db.query.answers.findFirst({
-          where: and(eq(answers.questionId, questionInternalId), eq(answers.isCorrect, true)),
-        });
+        // Only add wrong answers if there's no confirmed correct answer
+        const hasCorrect =
+          action === "added_correct" ||
+          action === "updated_correct" ||
+          action === "verified_correct" ||
+          Boolean(
+            await db.query.answers.findFirst({
+              where: and(eq(answers.questionId, questionInternalId), eq(answers.isCorrect, true)),
+            }),
+          );
 
         if (!hasCorrect) {
           // Upsert wrong answer exclusions
+          // 象限变化: 无答案->增加排除项 / 排除项->增加更多排除项
           for (const wrongVal of toSaveWrongs) {
-            // Check if this wrong answer already exists
             const existingWrong = await db.query.answers.findFirst({
               where: and(
                 eq(answers.questionId, questionInternalId),
@@ -720,6 +761,14 @@ export const uploadRoutes = new Elysia({ prefix: "/upload" }).post(
               action = action === "no_change" ? "added_wrong" : action;
             }
           }
+        }
+      }
+
+      if (action === "no_change") {
+        if (!existing) {
+          action = "added_question";
+        } else if (enrichedMetadata) {
+          action = "enriched_metadata";
         }
       }
 
