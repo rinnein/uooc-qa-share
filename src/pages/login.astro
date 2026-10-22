@@ -1,6 +1,12 @@
 ---
 import Layout from "@/layouts/Layout.astro";
 import LoginButtons from "@/components/LoginButtons";
+import { env } from "@/lib/env";
+
+const providers = {
+  github: Boolean(env.GITHUB_CLIENT_ID && env.GITHUB_CLIENT_SECRET),
+  biliSign: Boolean(env.BILI_SIGN_CLIENT_ID && env.BILI_SIGN_CLIENT_SECRET),
+};
 ---
 
 <Layout title="登录">
@@ -12,7 +18,7 @@ import LoginButtons from "@/components/LoginButtons";
           认证登录可覆盖更新答案，匿名登录仅可添加新答案
         </p>
       </div>
-      <LoginButtons client:load />
+      <LoginButtons client:load providers={providers} />
     </div>
   </div>
 </Layout>

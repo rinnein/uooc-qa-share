@@ -246,18 +246,21 @@ export const auth = betterAuth({
       resource: `${env.BETTER_AUTH_URL}/mcp`,
     }),
     genericOAuth({
-      config: [
-        {
-          providerId: "bili-sign",
-          clientId: env.BILI_SIGN_CLIENT_ID ?? "",
-          clientSecret: env.BILI_SIGN_CLIENT_SECRET ?? "",
-          authorizationUrl: env.BILI_SIGN_AUTHORIZATION_URL,
-          tokenUrl: env.BILI_SIGN_TOKEN_URL,
-          userInfoUrl: env.BILI_SIGN_USERINFO_URL,
-          scopes: ["openid", "profile", "email"],
-          pkce: false,
-        },
-      ],
+      config:
+        env.BILI_SIGN_CLIENT_ID && env.BILI_SIGN_CLIENT_SECRET
+          ? [
+              {
+                providerId: "bili-sign",
+                clientId: env.BILI_SIGN_CLIENT_ID,
+                clientSecret: env.BILI_SIGN_CLIENT_SECRET,
+                authorizationUrl: env.BILI_SIGN_AUTHORIZATION_URL,
+                tokenUrl: env.BILI_SIGN_TOKEN_URL,
+                userInfoUrl: env.BILI_SIGN_USERINFO_URL,
+                scopes: ["openid", "profile", "email"],
+                pkce: false,
+              },
+            ]
+          : [],
     }),
   ],
 });

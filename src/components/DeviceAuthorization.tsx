@@ -7,7 +7,16 @@ interface VerifiedInfo {
   status?: string;
 }
 
-export default function DeviceAuthorization() {
+export interface DeviceAuthorizationProps {
+  providers?: {
+    github?: boolean;
+    biliSign?: boolean;
+  };
+}
+
+export default function DeviceAuthorization({ providers }: DeviceAuthorizationProps = {}) {
+  const showGithub = providers ? Boolean(providers.github) : true;
+  const showBiliSign = providers ? Boolean(providers.biliSign) : true;
   const { data: session, isPending: sessionLoading } = authClient.useSession();
   const [userCode, setUserCode] = useState("");
   const [agentId, setAgentId] = useState<string | null>(null);
@@ -269,24 +278,28 @@ export default function DeviceAuthorization() {
           </div>
 
           <div className="space-y-2.5">
-            <button
-              type="button"
-              onClick={() =>
-                void authClient.signIn.social({ provider: "github", callbackURL: currentUrl })
-              }
-              className="w-full rounded-md bg-[#24292f] px-4 py-2 text-xs font-medium text-white hover:bg-[#24292f]/90 transition-colors"
-            >
-              使用 GitHub 登录并继续授权
-            </button>
-            <button
-              type="button"
-              onClick={() =>
-                void authClient.signIn.social({ provider: "bili-sign", callbackURL: currentUrl })
-              }
-              className="w-full rounded-md bg-[#fb7299] px-4 py-2 text-xs font-medium text-white hover:bg-[#fb7299]/90 transition-colors"
-            >
-              使用 bili-sign 登录并继续授权
-            </button>
+            {showGithub && (
+              <button
+                type="button"
+                onClick={() =>
+                  void authClient.signIn.social({ provider: "github", callbackURL: currentUrl })
+                }
+                className="w-full rounded-md bg-[#24292f] px-4 py-2 text-xs font-medium text-white hover:bg-[#24292f]/90 transition-colors"
+              >
+                使用 GitHub 登录并继续授权
+              </button>
+            )}
+            {showBiliSign && (
+              <button
+                type="button"
+                onClick={() =>
+                  void authClient.signIn.social({ provider: "bili-sign", callbackURL: currentUrl })
+                }
+                className="w-full rounded-md bg-[#fb7299] px-4 py-2 text-xs font-medium text-white hover:bg-[#fb7299]/90 transition-colors"
+              >
+                使用 bili-sign 登录并继续授权
+              </button>
+            )}
             <button
               type="button"
               onClick={() => {

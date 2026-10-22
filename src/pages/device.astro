@@ -1,10 +1,16 @@
 ---
 import Layout from "@/layouts/Layout.astro";
 import DeviceAuthorization from "@/components/DeviceAuthorization";
+import { env } from "@/lib/env";
+
+const providers = {
+  github: Boolean(env.GITHUB_CLIENT_ID && env.GITHUB_CLIENT_SECRET),
+  biliSign: Boolean(env.BILI_SIGN_CLIENT_ID && env.BILI_SIGN_CLIENT_SECRET),
+};
 ---
 
 <Layout title="设备与插件授权">
   <div class="py-10">
-    <DeviceAuthorization client:load />
+    <DeviceAuthorization client:load providers={providers} />
   </div>
 </Layout>
