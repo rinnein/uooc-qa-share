@@ -50,8 +50,11 @@ services:
       BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-7}
     volumes:
       - postgres_data:/var/lib/postgresql
+      - ./drizzle:/docker-entrypoint-initdb.d:ro
       - ./backups:/backups
       - ./scripts/backup.sh:/usr/local/bin/backup.sh:ro
+      - ./scripts/init-db.sh:/usr/local/bin/init-db.sh:ro
+      - ./scripts/restore.sh:/usr/local/bin/restore.sh:ro
     entrypoint:
       - /bin/bash
       - -c
