@@ -16,7 +16,7 @@ describe("OAuth 2.1 PKCE configuration for bili-sign", () => {
               authorizationUrl: "https://bili-sign.rinne.in/oauth/authorize",
               tokenUrl: "https://bili-sign.rinne.in/oauth/token",
               userInfoUrl: "https://bili-sign.rinne.in/oauth/userinfo",
-              scopes: ["openid", "profile", "email"],
+              scopes: ["openid", "profile", "bili:public"],
               pkce: true,
               tokenEndpointAuth: { method: "none" },
             },
@@ -44,6 +44,7 @@ describe("OAuth 2.1 PKCE configuration for bili-sign", () => {
     expect(authUrl.origin + authUrl.pathname).toBe("https://bili-sign.rinne.in/oauth/authorize");
     expect(authUrl.searchParams.get("client_id")).toBe("test_pkce_client_id");
     expect(authUrl.searchParams.get("response_type")).toBe("code");
+    expect(authUrl.searchParams.get("scope")).toBe("openid profile bili:public");
     expect(authUrl.searchParams.get("code_challenge_method")).toBe("S256");
     expect(authUrl.searchParams.get("code_challenge")).toBeTruthy();
   });

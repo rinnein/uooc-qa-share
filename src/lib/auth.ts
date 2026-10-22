@@ -255,11 +255,20 @@ export const auth = betterAuth({
               authorizationUrl: env.BILI_SIGN_AUTHORIZATION_URL,
               tokenUrl: env.BILI_SIGN_TOKEN_URL,
               userInfoUrl: env.BILI_SIGN_USERINFO_URL,
-              scopes: ["openid", "profile", "email"],
+              scopes: ["openid", "profile", "bili:public"],
               pkce: true,
               tokenEndpointAuth: env.BILI_SIGN_CLIENT_SECRET
                 ? { method: "client_secret_post" }
                 : { method: "none" },
+              mapProfileToUser: (profile: Record<string, any>) => {
+                const id = profile.sub || profile.id || profile.mid || "user";
+                return {
+                  name: profile.name || profile.uname || profile.nickname || `bili_${id}`,
+                  email: profile.email || `${id}@bili-sign.local`,
+                  image: profile.image || profile.avatar || profile.picture,
+                  emailVerified: true,
+                };
+              },
             },
           ]
         : [],
