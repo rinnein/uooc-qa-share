@@ -31,8 +31,12 @@ ENV NODE_ENV=production \
     HOST=0.0.0.0 \
     PORT=4321
 
-# Install ca-certificates for external HTTPS API requests
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
+# ca-certificates: external HTTPS API requests.
+# libatomic1: the official Node.js linux/arm64 build links against libatomic,
+# and debian-slim does not ship it (arm64 hosts fail with "libatomic.so.1:
+# cannot open shared object file").
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates libatomic1 \
+    && rm -rf /var/lib/apt/lists/*
 
 # The exact Node.js from .node-version (official, signature-verified build).
 COPY --from=build /tmp/node /usr/local/bin/node
