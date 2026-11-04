@@ -28,3 +28,4 @@ backups/*.sql
 backups/*.sql.gz
 *.sql.gz
 
+.zcode

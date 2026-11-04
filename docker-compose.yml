@@ -15,9 +15,9 @@ services:
       - GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET:-}
       - BILI_SIGN_CLIENT_ID=${BILI_SIGN_CLIENT_ID:-}
       - BILI_SIGN_CLIENT_SECRET=${BILI_SIGN_CLIENT_SECRET:-}
-      - BILI_SIGN_AUTHORIZATION_URL=${BILI_SIGN_AUTHORIZATION_URL:-https://bili-sign.rinne.in/oauth/authorize}
-      - BILI_SIGN_TOKEN_URL=${BILI_SIGN_TOKEN_URL:-https://bili-sign.rinne.in/oauth/token}
-      - BILI_SIGN_USERINFO_URL=${BILI_SIGN_USERINFO_URL:-https://bili-sign.rinne.in/oauth/userinfo}
+      - BILI_SIGN_AUTHORIZATION_URL=${BILI_SIGN_AUTHORIZATION_URL:-https://bili-sign.rinne.in/oauth2/authorize}
+      - BILI_SIGN_TOKEN_URL=${BILI_SIGN_TOKEN_URL:-https://bili-sign.rinne.in/oauth2/token}
+      - BILI_SIGN_USERINFO_URL=${BILI_SIGN_USERINFO_URL:-https://bili-sign.rinne.in/oauth2/userinfo}
       - EMBEDDING_API_URL=${EMBEDDING_API_URL:-}
       - EMBEDDING_API_KEY=${EMBEDDING_API_KEY:-}
       - EMBEDDING_MODEL=${EMBEDDING_MODEL:-BAAI/bge-small-zh-v1.5}
