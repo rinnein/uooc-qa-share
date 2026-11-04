@@ -17,13 +17,16 @@ export default function CourseView({ cid }: { cid: string }) {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    fetch(`/api/courses/${cid}`)
+    fetch(`/api/courses/${cid}?hideEmpty=true`)
       .then((r) => r.json())
       .then((data) => {
         if (data.error) setError(data.error);
         else {
           setCourse(data.course);
-          setGroups(data.taskGroups ?? []);
+          const validGroups = (data.taskGroups ?? []).filter(
+            (g: TaskGroup) => (g.answeredCount ?? 0) > 0 || (g.excludedCount ?? 0) > 0,
+          );
+          setGroups(validGroups);
         }
       })
       .catch(() => setError("加载失败"))
@@ -80,7 +83,11 @@ export default function CourseView({ cid }: { cid: string }) {
             )}
           </a>
         ))}
-        {groups.length === 0 && <p className="text-muted-foreground text-sm">该课程暂无题组数据</p>}
+        {groups.length === 0 && (
+          <p className="text-muted-foreground text-sm">
+            该课程暂无可展示的测验题单（尚未收录正确答案或排除错误答案）
+          </p>
+        )}
       </div>
     </div>
   );

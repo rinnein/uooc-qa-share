@@ -2,7 +2,7 @@
 import Layout from "@/layouts/Layout.astro";
 import SearchBar from "@/components/SearchBar";
 import { db } from "@/db";
-import { questions, courses, taskGroups, answers } from "@/db/schema";
+import { questions, taskGroups, answers } from "@/db/schema";
 import { sql, eq } from "drizzle-orm";
 
 let stats = {
@@ -14,9 +14,26 @@ let stats = {
 };
 
 try {
-  const [qCount] = await db.select({ count: sql<number>`count(*)` }).from(questions);
-  const [cCount] = await db.select({ count: sql<number>`count(*)` }).from(courses);
-  const [tCount] = await db.select({ count: sql<number>`count(*)` }).from(taskGroups);
+  const [qCount] = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(questions)
+    .where(
+      sql`EXISTS (
+        SELECT 1
+        FROM ${questions} AS q2
+        INNER JOIN ${answers} ON q2.id = ${answers.questionId}
+        WHERE q2.tid = ${questions.tid}
+      )`,
+    );
+  const [cCount] = await db
+    .select({ count: sql<number>`count(distinct ${taskGroups.cid})` })
+    .from(taskGroups)
+    .innerJoin(questions, eq(taskGroups.tid, questions.tid))
+    .innerJoin(answers, eq(questions.id, answers.questionId));
+  const [tCount] = await db
+    .select({ count: sql<number>`count(distinct ${questions.tid})` })
+    .from(questions)
+    .innerJoin(answers, eq(questions.id, answers.questionId));
   const [aCount] = await db
     .select({ count: sql<number>`count(*)` })
     .from(answers)

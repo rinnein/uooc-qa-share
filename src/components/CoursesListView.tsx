@@ -63,6 +63,7 @@ export default function CoursesListView({
     if (q.trim()) params.set("q", q.trim());
     params.set("page", String(targetPage));
     params.set("pageSize", "10");
+    params.set("hideEmpty", "true");
 
     fetch(`/api/courses?${params.toString()}`)
       .then((r) => r.json())
@@ -171,12 +172,12 @@ export default function CoursesListView({
         <div className="rounded-xl border border-dashed p-10 text-center space-y-2">
           <div className="text-3xl">📚</div>
           <p className="text-base font-medium text-foreground">
-            {searchQuery ? "未找到符合搜索条件的课程或题单" : "暂无课程数据"}
+            {searchQuery ? "未找到符合搜索条件的课程或题单" : "暂无可展示的课程题单"}
           </p>
           <p className="text-xs text-muted-foreground">
             {searchQuery
               ? "尝试更换关键词，或者搜索课程 cid 编号"
-              : "您可以通过上传页面批量导入试卷数据"}
+              : "当前暂无已收录正确答案或排除错误答案的课程题单"}
           </p>
         </div>
       ) : (

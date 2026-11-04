@@ -83,6 +83,7 @@ export const tasksRoutes = new Elysia()
         ),
       );
       const q = query.q?.trim()?.toLowerCase();
+      const hideEmpty = query.hideEmpty !== "false";
 
       const allCourses = await db.query.courses.findMany({
         orderBy: (c, { desc }) => [desc(c.updatedAt)],
@@ -142,31 +143,41 @@ export const tasksRoutes = new Elysia()
       >();
 
       for (const g of allTaskGroups) {
+        const answeredCount = aMap.get(g.tid) ?? 0;
+        const excludedCount = eMap.get(g.tid) ?? 0;
+        const isNonEmpty = answeredCount > 0 || excludedCount > 0;
+
+        if (hideEmpty && !isNonEmpty) {
+          continue;
+        }
+
         const list = groupsByCid.get(g.cid) ?? [];
         list.push({
           tid: g.tid,
           cid: g.cid,
           name: g.name,
           questionCount: qMap.get(g.tid) ?? 0,
-          answeredCount: aMap.get(g.tid) ?? 0,
-          excludedCount: eMap.get(g.tid) ?? 0,
+          answeredCount,
+          excludedCount,
         });
         groupsByCid.set(g.cid, list);
       }
 
-      const mappedCourses = allCourses.map((c) => {
-        const tGroups = groupsByCid.get(c.cid) ?? [];
-        return {
-          cid: c.cid,
-          name: c.name,
-          updatedAt: c.updatedAt,
-          taskGroups: tGroups,
-          taskGroupCount: tGroups.length,
-          totalQuestions: tGroups.reduce((acc, g) => acc + g.questionCount, 0),
-          totalAnswered: tGroups.reduce((acc, g) => acc + g.answeredCount, 0),
-          totalExcluded: tGroups.reduce((acc, g) => acc + g.excludedCount, 0),
-        };
-      });
+      const mappedCourses = allCourses
+        .map((c) => {
+          const tGroups = groupsByCid.get(c.cid) ?? [];
+          return {
+            cid: c.cid,
+            name: c.name,
+            updatedAt: c.updatedAt,
+            taskGroups: tGroups,
+            taskGroupCount: tGroups.length,
+            totalQuestions: tGroups.reduce((acc, g) => acc + g.questionCount, 0),
+            totalAnswered: tGroups.reduce((acc, g) => acc + g.answeredCount, 0),
+            totalExcluded: tGroups.reduce((acc, g) => acc + g.excludedCount, 0),
+          };
+        })
+        .filter((c) => (hideEmpty ? c.taskGroups.length > 0 : true));
 
       // Filter by q if provided
       const filteredCourses = q
@@ -186,15 +197,28 @@ export const tasksRoutes = new Elysia()
       const offset = (page - 1) * pageSize;
       const paginatedCourses = filteredCourses.slice(offset, offset + pageSize);
 
+      const nonEmptytaskGroups = allTaskGroups.filter((g) => {
+        const answeredCount = aMap.get(g.tid) ?? 0;
+        const excludedCount = eMap.get(g.tid) ?? 0;
+        return answeredCount > 0 || excludedCount > 0;
+      });
+      const nonEmptytids = new Set(nonEmptytaskGroups.map((g) => g.tid));
+      const totalNonEmptyQuestions = Array.from(nonEmptytids).reduce(
+        (acc, tid) => acc + (qMap.get(tid) ?? 0),
+        0,
+      );
+
       return {
         courses: paginatedCourses,
         total,
         page,
         pageSize,
         totalPages,
-        allCoursesCount: allCourses.length,
-        allTaskGroupsCount: allTaskGroups.length,
-        allQuestionsCount: Array.from(qMap.values()).reduce((a, b) => a + b, 0),
+        allCoursesCount: hideEmpty ? mappedCourses.length : allCourses.length,
+        allTaskGroupsCount: hideEmpty ? nonEmptytaskGroups.length : allTaskGroups.length,
+        allQuestionsCount: hideEmpty
+          ? totalNonEmptyQuestions
+          : Array.from(qMap.values()).reduce((a, b) => a + b, 0),
       };
     },
     {
@@ -203,6 +227,7 @@ export const tasksRoutes = new Elysia()
         page: t.Optional(t.String()),
         pageSize: t.Optional(t.String()),
         limit: t.Optional(t.String()),
+        hideEmpty: t.Optional(t.String()),
       }),
     },
   )
@@ -210,7 +235,8 @@ export const tasksRoutes = new Elysia()
   // Get all task groups under a course
   .get(
     "/courses/:cid",
-    async ({ params }) => {
+    async ({ params, query }) => {
+      const hideEmpty = query?.hideEmpty !== "false";
       const course = await db.query.courses.findFirst({
         where: eq(courses.cid, params.cid),
       });
@@ -286,17 +312,32 @@ export const tasksRoutes = new Elysia()
       const eMap = new Map<string, number>();
       for (const row of excludedCounts) eMap.set(row.tid, Number(row.count));
 
+      let mappedGroups = groups.map((g) => ({
+        ...g,
+        questionCount: qMap.get(g.tid) ?? 0,
+        answeredCount: aMap.get(g.tid) ?? 0,
+        excludedCount: eMap.get(g.tid) ?? 0,
+      }));
+
+      if (hideEmpty) {
+        mappedGroups = mappedGroups.filter(
+          (g) => (g.answeredCount ?? 0) > 0 || (g.excludedCount ?? 0) > 0,
+        );
+      }
+
       return {
         course,
-        taskGroups: groups.map((g) => ({
-          ...g,
-          questionCount: qMap.get(g.tid) ?? 0,
-          answeredCount: aMap.get(g.tid) ?? 0,
-          excludedCount: eMap.get(g.tid) ?? 0,
-        })),
+        taskGroups: mappedGroups,
       };
     },
-    { params: t.Object({ cid: t.String() }) },
+    {
+      params: t.Object({ cid: t.String() }),
+      query: t.Optional(
+        t.Object({
+          hideEmpty: t.Optional(t.String()),
+        }),
+      ),
+    },
   )
 
   // Get questions in a specific course + task group

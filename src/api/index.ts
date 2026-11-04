@@ -6,7 +6,7 @@ import { tasksRoutes } from "./tasks";
 import { uploadRoutes } from "./upload";
 import { automationRoutes } from "./automation";
 import { db } from "@/db";
-import { questions, courses, taskGroups, answers } from "@/db/schema";
+import { questions, taskGroups, answers } from "@/db/schema";
 import { sql, eq } from "drizzle-orm";
 
 export const api = new Elysia({ prefix: "/api" })
@@ -90,18 +90,40 @@ export const api = new Elysia({ prefix: "/api" })
   .use(automationRoutes)
   .get("/health", () => ({ ok: true, time: new Date().toISOString() }))
   .get("/stats", async () => {
-    const [qCount] = await db.select({ count: sql<number>`count(*)` }).from(questions);
-    const [cCount] = await db.select({ count: sql<number>`count(*)` }).from(courses);
-    const [tCount] = await db.select({ count: sql<number>`count(*)` }).from(taskGroups);
+    const [qCount] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(questions)
+      .where(
+        sql`EXISTS (
+          SELECT 1
+          FROM ${questions} AS q2
+          INNER JOIN ${answers} ON q2.id = ${answers.questionId}
+          WHERE q2.tid = ${questions.tid}
+        )`,
+      );
+    const [cCount] = await db
+      .select({ count: sql<number>`count(distinct ${taskGroups.cid})` })
+      .from(taskGroups)
+      .innerJoin(questions, eq(taskGroups.tid, questions.tid))
+      .innerJoin(answers, eq(questions.id, answers.questionId));
+    const [tCount] = await db
+      .select({ count: sql<number>`count(distinct ${questions.tid})` })
+      .from(questions)
+      .innerJoin(answers, eq(questions.id, answers.questionId));
     const [aCount] = await db
       .select({ count: sql<number>`count(*)` })
       .from(answers)
       .where(eq(answers.isCorrect, true));
+    const [wCount] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(answers)
+      .where(eq(answers.isCorrect, false));
 
     return {
       questions: Number(qCount?.count ?? 0),
       courses: Number(cCount?.count ?? 0),
       taskGroups: Number(tCount?.count ?? 0),
       correctAnswers: Number(aCount?.count ?? 0),
+      excludedAnswers: Number(wCount?.count ?? 0),
     };
   });
