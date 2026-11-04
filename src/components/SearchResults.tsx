@@ -1,6 +1,13 @@
 import { useState, useEffect, type FormEvent } from "react";
+import { Sparkles, Loader2 } from "lucide-react";
 import QuestionCard from "./QuestionCard";
 import Pagination from "./Pagination";
+import EnhancedSearchModal from "./EnhancedSearchModal";
+import {
+  getEnhancedSearchEnabled,
+  computeTextEmbedding,
+  checkModelCached,
+} from "@/lib/client-embedding";
 
 type Question = {
   id: number;
@@ -30,11 +37,27 @@ export default function SearchResults({ initialQuery, initialPage = 1 }: SearchR
   const [query, setQuery] = useState(initialQuery);
   const [results, setResults] = useState<Question[]>([]);
   const [loading, setLoading] = useState(false);
+  const [statusText, setStatusText] = useState<string>("搜索中...");
   const [page, setPage] = useState(initialPage);
   const [total, setTotal] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
   const [searched, setSearched] = useState(false);
   const [filter, setFilter] = useState<"all" | "correct" | "excluded" | "unanswered">("all");
+
+  // Enhanced search modal and state
+  const [modalOpen, setModalOpen] = useState(false);
+  const [enhancedEnabled, setEnhancedEnabled] = useState(false);
+  const [usedVectorSearch, setUsedVectorSearch] = useState(false);
+
+  useEffect(() => {
+    const enabled = getEnhancedSearchEnabled();
+    setEnhancedEnabled(enabled);
+
+    // If enabled, verify cache availability
+    if (enabled) {
+      void checkModelCached();
+    }
+  }, []);
 
   async function doSearch(q: string, targetPage: number = 1) {
     if (!q.trim()) {
@@ -42,25 +65,68 @@ export default function SearchResults({ initialQuery, initialPage = 1 }: SearchR
       setTotal(0);
       setTotalPages(1);
       setSearched(false);
+      setUsedVectorSearch(false);
       return;
     }
+
     setLoading(true);
     setSearched(true);
+    let isVector = false;
+
     try {
-      const res = await fetch(
-        `/api/questions/search?q=${encodeURIComponent(q)}&page=${targetPage}&limit=10`,
-      );
-      const data = await res.json();
+      let embedding: number[] | undefined;
+
+      if (enhancedEnabled) {
+        try {
+          setStatusText("正在提取语义特征 (ONNX 本地向量计算)...");
+          const vec = await computeTextEmbedding(q);
+          if (vec && vec.length === 512) {
+            embedding = vec;
+            isVector = true;
+          }
+        } catch (embErr) {
+          console.warn("客户端向量计算失败，降级为普通关键词搜索:", embErr);
+        }
+      }
+
+      setStatusText("正在检索匹配题目...");
+
+      let data: any;
+      if (embedding && embedding.length === 512) {
+        const res = await fetch("/api/questions/search", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            q,
+            embedding,
+            page: targetPage,
+            limit: 10,
+          }),
+        });
+        data = await res.json();
+      } else {
+        const res = await fetch(
+          `/api/questions/search?q=${encodeURIComponent(q)}&page=${targetPage}&limit=10`,
+        );
+        data = await res.json();
+      }
+
       setResults(data.results ?? []);
       setTotal(data.total ?? data.results?.length ?? 0);
       setTotalPages(data.totalPages ?? 1);
       setPage(data.page ?? targetPage);
-    } catch {
+      setUsedVectorSearch(isVector);
+    } catch (err) {
+      console.error("Search request error:", err);
       setResults([]);
       setTotal(0);
       setTotalPages(1);
+      setUsedVectorSearch(false);
     } finally {
       setLoading(false);
+      setStatusText("搜索中...");
     }
   }
 
@@ -96,32 +162,82 @@ export default function SearchResults({ initialQuery, initialPage = 1 }: SearchR
 
   return (
     <div className="space-y-4">
-      <form onSubmit={handleSubmit} className="flex gap-2">
-        <input
-          type="text"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="输入题干关键词..."
-          className="flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        />
+      {/* Search Input & Controls */}
+      <form onSubmit={handleSubmit} className="flex flex-col sm:flex-row gap-2">
+        <div className="flex-1 flex gap-2">
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder={
+              enhancedEnabled ? "输入题目描述或语义关键词 (增强模式开启)..." : "输入题干关键词..."
+            }
+            className="flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          />
+          <button
+            type="submit"
+            disabled={loading}
+            className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50 shrink-0"
+          >
+            {loading ? "搜索中" : "搜索"}
+          </button>
+        </div>
+
+        {/* Enhanced Search Button */}
         <button
-          type="submit"
-          className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
+          type="button"
+          onClick={() => setModalOpen(true)}
+          className={`inline-flex items-center justify-center gap-1.5 px-3 py-2 text-sm font-medium rounded-md border transition-all shrink-0 ${
+            enhancedEnabled
+              ? "border-primary/40 bg-primary/10 text-primary hover:bg-primary/20 shadow-xs"
+              : "border-border bg-background text-muted-foreground hover:bg-muted hover:text-foreground"
+          }`}
+          title={
+            enhancedEnabled
+              ? "增强向量搜索已开启，点击进行管理或停用"
+              : "点击下载本地模型并开启增强向量搜索"
+          }
         >
-          搜索
+          <Sparkles className="w-4 h-4 shrink-0 text-amber-500" />
+          <span>增强搜索</span>
+          <span
+            className={`text-[11px] px-1.5 py-0.5 rounded-full font-semibold transition-colors ${
+              enhancedEnabled
+                ? "bg-primary text-primary-foreground"
+                : "bg-muted text-muted-foreground"
+            }`}
+          >
+            {enhancedEnabled ? "已开启" : "未开启"}
+          </span>
         </button>
       </form>
 
-      {loading && <p className="text-muted-foreground text-sm">搜索中...</p>}
+      {/* Loading indicator */}
+      {loading && (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
+          <Loader2 className="w-4 h-4 animate-spin text-primary" />
+          <span>{statusText}</span>
+        </div>
+      )}
 
+      {/* Empty state */}
       {!loading && searched && results.length === 0 && (
         <p className="text-muted-foreground text-sm">未找到匹配的题目</p>
       )}
 
+      {/* Results Header & Filters */}
       {!loading && results.length > 0 && (
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-          <div className="text-xs text-muted-foreground">
-            找到 <strong className="text-foreground font-semibold">{total}</strong> 道相关题目
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 pt-1">
+          <div className="flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
+            <span>
+              找到 <strong className="text-foreground font-semibold">{total}</strong> 道相关题目
+            </span>
+            {usedVectorSearch && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary/10 text-primary font-medium text-[11px]">
+                <Sparkles className="w-3 h-3 text-amber-500" />
+                向量语义检索
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-1.5 flex-wrap text-xs">
             <button
@@ -172,6 +288,7 @@ export default function SearchResults({ initialQuery, initialPage = 1 }: SearchR
         </div>
       )}
 
+      {/* Question Cards List */}
       <div className="space-y-3">
         {results
           .filter((q) => {
@@ -185,6 +302,7 @@ export default function SearchResults({ initialQuery, initialPage = 1 }: SearchR
           ))}
       </div>
 
+      {/* Pagination */}
       {!loading && results.length > 0 && totalPages > 1 && (
         <Pagination
           page={page}
@@ -194,6 +312,14 @@ export default function SearchResults({ initialQuery, initialPage = 1 }: SearchR
           onPageChange={handlePageChange}
         />
       )}
+
+      {/* Enhanced Search Management Modal */}
+      <EnhancedSearchModal
+        open={modalOpen}
+        onOpenChange={setModalOpen}
+        enabled={enhancedEnabled}
+        onEnabledChange={setEnhancedEnabled}
+      />
     </div>
   );
 }
